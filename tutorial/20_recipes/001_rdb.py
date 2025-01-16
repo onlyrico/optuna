@@ -11,7 +11,7 @@ In this section, let's try simple examples running on a local environment with S
 
 .. note::
     You can also utilize other RDB backends, e.g., PostgreSQL or MySQL, by setting the storage argument to the DB's URL.
-    Please refer to `SQLAlchemy's document <https://docs.sqlalchemy.org/en/latest/core/engines.html#database-urls>`_ for how to set up the URL.
+    Please refer to `SQLAlchemy's document <https://docs.sqlalchemy.org/en/latest/core/engines.html#database-urls>`__ for how to set up the URL.
 
 
 New Study
@@ -55,7 +55,8 @@ study = optuna.create_study(study_name=study_name, storage=storage_name, load_if
 study.optimize(objective, n_trials=3)
 
 ###################################################################################################
-# Note that the storage doesn't store the state of the instance of :mod:`~optuna.samplers`.
+# Note that the storage doesn't store the state of the instance of :mod:`~optuna.samplers`
+# and :mod:`~optuna.pruners`.
 # When we resume a study with a sampler whose ``seed`` argument is specified for
 # reproducibility, you need to restore the sampler with using ``pickle`` as follows::
 #
@@ -75,6 +76,12 @@ study.optimize(objective, n_trials=3)
 ###################################################################################################
 # Experimental History
 # --------------------
+#
+# Note that this section requires the installation of `Pandas <https://pandas.pydata.org/>`__:
+#
+# .. code-block:: bash
+#
+#     $ pip install pandas
 #
 # We can access histories of studies and trials via the :class:`~optuna.study.Study` class.
 # For example, we can get all trials of ``example-study`` as:

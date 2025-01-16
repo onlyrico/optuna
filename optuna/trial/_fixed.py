@@ -1,22 +1,24 @@
+from __future__ import annotations
+
+from collections.abc import Sequence
 import datetime
 from typing import Any
-from typing import Dict
-from typing import Optional
 from typing import overload
-from typing import Sequence
 import warnings
 
 from optuna import distributions
+from optuna._convert_positional_args import convert_positional_args
 from optuna._deprecated import deprecated_func
 from optuna.distributions import BaseDistribution
 from optuna.distributions import CategoricalChoiceType
 from optuna.distributions import CategoricalDistribution
 from optuna.distributions import FloatDistribution
 from optuna.distributions import IntDistribution
+from optuna.trial._base import _SUGGEST_INT_POSITIONAL_ARGS
 from optuna.trial._base import BaseTrial
 
 
-_suggest_deprecated_msg = "Use :func:`~optuna.trial.FixedTrial.suggest_float` instead."
+_suggest_deprecated_msg = "Use suggest_float{args} instead."
 
 
 class FixedTrial(BaseTrial):
@@ -57,12 +59,12 @@ class FixedTrial(BaseTrial):
 
     """
 
-    def __init__(self, params: Dict[str, Any], number: int = 0) -> None:
+    def __init__(self, params: dict[str, Any], number: int = 0) -> None:
         self._params = params
-        self._suggested_params: Dict[str, Any] = {}
-        self._distributions: Dict[str, BaseDistribution] = {}
-        self._user_attrs: Dict[str, Any] = {}
-        self._system_attrs: Dict[str, Any] = {}
+        self._suggested_params: dict[str, Any] = {}
+        self._distributions: dict[str, BaseDistribution] = {}
+        self._user_attrs: dict[str, Any] = {}
+        self._system_attrs: dict[str, Any] = {}
         self._datetime_start = datetime.datetime.now()
         self._number = number
 
@@ -72,51 +74,48 @@ class FixedTrial(BaseTrial):
         low: float,
         high: float,
         *,
-        step: Optional[float] = None,
+        step: float | None = None,
         log: bool = False,
     ) -> float:
         return self._suggest(name, FloatDistribution(low, high, log=log, step=step))
 
-    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg)
+    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg.format(args=""))
     def suggest_uniform(self, name: str, low: float, high: float) -> float:
         return self.suggest_float(name, low, high)
 
-    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg)
+    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg.format(args="(..., log=True)"))
     def suggest_loguniform(self, name: str, low: float, high: float) -> float:
         return self.suggest_float(name, low, high, log=True)
 
-    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg)
+    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg.format(args="(..., step=...)"))
     def suggest_discrete_uniform(self, name: str, low: float, high: float, q: float) -> float:
         return self.suggest_float(name, low, high, step=q)
 
-    def suggest_int(self, name: str, low: int, high: int, step: int = 1, log: bool = False) -> int:
+    @convert_positional_args(previous_positional_arg_names=_SUGGEST_INT_POSITIONAL_ARGS)
+    def suggest_int(
+        self, name: str, low: int, high: int, *, step: int = 1, log: bool = False
+    ) -> int:
         return int(self._suggest(name, IntDistribution(low, high, log=log, step=step)))
 
     @overload
-    def suggest_categorical(self, name: str, choices: Sequence[None]) -> None:
-        ...
+    def suggest_categorical(self, name: str, choices: Sequence[None]) -> None: ...
 
     @overload
-    def suggest_categorical(self, name: str, choices: Sequence[bool]) -> bool:
-        ...
+    def suggest_categorical(self, name: str, choices: Sequence[bool]) -> bool: ...
 
     @overload
-    def suggest_categorical(self, name: str, choices: Sequence[int]) -> int:
-        ...
+    def suggest_categorical(self, name: str, choices: Sequence[int]) -> int: ...
 
     @overload
-    def suggest_categorical(self, name: str, choices: Sequence[float]) -> float:
-        ...
+    def suggest_categorical(self, name: str, choices: Sequence[float]) -> float: ...
 
     @overload
-    def suggest_categorical(self, name: str, choices: Sequence[str]) -> str:
-        ...
+    def suggest_categorical(self, name: str, choices: Sequence[str]) -> str: ...
 
     @overload
     def suggest_categorical(
         self, name: str, choices: Sequence[CategoricalChoiceType]
-    ) -> CategoricalChoiceType:
-        ...
+    ) -> CategoricalChoiceType: ...
 
     def suggest_categorical(
         self, name: str, choices: Sequence[CategoricalChoiceType]
@@ -132,7 +131,7 @@ class FixedTrial(BaseTrial):
     def set_user_attr(self, key: str, value: Any) -> None:
         self._user_attrs[key] = value
 
-    @deprecated_func("3.1.0", "6.0.0")
+    @deprecated_func("3.1.0", "5.0.0")
     def set_system_attr(self, key: str, value: Any) -> None:
         self._system_attrs[key] = value
 
@@ -160,23 +159,23 @@ class FixedTrial(BaseTrial):
         return value
 
     @property
-    def params(self) -> Dict[str, Any]:
+    def params(self) -> dict[str, Any]:
         return self._suggested_params
 
     @property
-    def distributions(self) -> Dict[str, BaseDistribution]:
+    def distributions(self) -> dict[str, BaseDistribution]:
         return self._distributions
 
     @property
-    def user_attrs(self) -> Dict[str, Any]:
+    def user_attrs(self) -> dict[str, Any]:
         return self._user_attrs
 
     @property
-    def system_attrs(self) -> Dict[str, Any]:
+    def system_attrs(self) -> dict[str, Any]:
         return self._system_attrs
 
     @property
-    def datetime_start(self) -> Optional[datetime.datetime]:
+    def datetime_start(self) -> datetime.datetime | None:
         return self._datetime_start
 
     @property

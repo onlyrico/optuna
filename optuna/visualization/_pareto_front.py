@@ -1,23 +1,20 @@
-import collections
-import json
+from __future__ import annotations
+
+from collections.abc import Callable
+from collections.abc import Sequence
 from typing import Any
-from typing import Callable
-from typing import Dict
-from typing import List
 from typing import NamedTuple
-from typing import Optional
-from typing import Sequence
-from typing import Tuple
-from typing import Union
 import warnings
 
 import optuna
-from optuna.exceptions import ExperimentalWarning
+from optuna import _deprecated
+from optuna.samplers._base import _CONSTRAINTS_KEY
 from optuna.study import Study
 from optuna.study._multi_objective import _get_pareto_front_trials_by_trials
 from optuna.trial import FrozenTrial
 from optuna.trial import TrialState
 from optuna.visualization._plotly_imports import _imports
+from optuna.visualization._utils import _make_hovertext
 
 
 if _imports.is_successful():
@@ -28,57 +25,33 @@ _logger = optuna.logging.get_logger(__name__)
 
 class _ParetoFrontInfo(NamedTuple):
     n_targets: int
-    target_names: List[str]
-    best_trials_with_values: List[Tuple[FrozenTrial, List[float]]]
-    non_best_trials_with_values: List[Tuple[FrozenTrial, List[float]]]
-    infeasible_trials_with_values: List[Tuple[FrozenTrial, List[float]]]
-    axis_order: List[int]
+    target_names: list[str]
+    best_trials_with_values: list[tuple[FrozenTrial, list[float]]]
+    non_best_trials_with_values: list[tuple[FrozenTrial, list[float]]]
+    infeasible_trials_with_values: list[tuple[FrozenTrial, list[float]]]
+    axis_order: list[int]
     include_dominated_trials: bool
-    has_constraints_func: bool
+    has_constraints: bool
 
 
 def plot_pareto_front(
     study: Study,
     *,
-    target_names: Optional[List[str]] = None,
+    target_names: list[str] | None = None,
     include_dominated_trials: bool = True,
-    axis_order: Optional[List[int]] = None,
-    constraints_func: Optional[Callable[[FrozenTrial], Sequence[float]]] = None,
-    targets: Optional[Callable[[FrozenTrial], Sequence[float]]] = None,
+    axis_order: list[int] | None = None,
+    constraints_func: Callable[[FrozenTrial], Sequence[float]] | None = None,
+    targets: Callable[[FrozenTrial], Sequence[float]] | None = None,
 ) -> "go.Figure":
     """Plot the Pareto front of a study.
 
     .. seealso::
         Please refer to :ref:`multi_objective` for the tutorial of the Pareto front visualization.
 
-    Example:
-
-        The following code snippet shows how to plot the Pareto front of a study.
-
-        .. plotly::
-
-            import optuna
-
-
-            def objective(trial):
-                x = trial.suggest_float("x", 0, 5)
-                y = trial.suggest_float("y", 0, 3)
-
-                v0 = 4 * x ** 2 + 4 * y ** 2
-                v1 = (x - 5) ** 2 + (y - 5) ** 2
-                return v0, v1
-
-
-            study = optuna.create_study(directions=["minimize", "minimize"])
-            study.optimize(objective, n_trials=50)
-
-            fig = optuna.visualization.plot_pareto_front(study)
-            fig.show()
-
     Args:
         study:
             A :class:`~optuna.study.Study` object whose trials are plotted for their objective
-            values. ``study.n_objectives`` must be either 2 or 3 when ``targets`` is :obj:`None`.
+            values. The number of objectives must be either 2 or 3 when ``targets`` is :obj:`None`.
         target_names:
             Objective name list used as the axis titles. If :obj:`None` is specified,
             "Objective {objective_index}" is used instead. If ``targets`` is specified
@@ -106,10 +79,10 @@ def plot_pareto_front(
             non-best, and infeasible. Categories are shown in different colors. Here, whether a
             trial is best (on Pareto front) or not is determined ignoring all infeasible trials.
 
-            .. note::
-                Added in v3.0.0 as an experimental feature. The interface may change in newer
-                versions without prior notice.
-                See https://github.com/optuna/optuna/releases/tag/v3.0.0.
+            .. warning::
+                Deprecated in v4.0.0. This feature will be removed in the future. The removal of
+                this feature is currently scheduled for v6.0.0, but this schedule is subject to
+                change. See https://github.com/optuna/optuna/releases/tag/v4.0.0.
         targets:
             A function that returns targets values to display.
             The argument to this function is :class:`~optuna.trial.FrozenTrial`.
@@ -122,7 +95,7 @@ def plot_pareto_front(
                 See https://github.com/optuna/optuna/releases/tag/v3.0.0.
 
     Returns:
-        A :class:`plotly.graph_objs.Figure` object.
+        A :class:`plotly.graph_objects.Figure` object.
     """
 
     _imports.check()
@@ -135,8 +108,8 @@ def plot_pareto_front(
 
 def _get_pareto_front_plot(info: _ParetoFrontInfo) -> "go.Figure":
     include_dominated_trials = info.include_dominated_trials
-    has_constraints_func = info.has_constraints_func
-    if not has_constraints_func:
+    has_constraints = info.has_constraints
+    if not has_constraints:
         data = [
             _make_scatter_object(
                 info.n_targets,
@@ -203,19 +176,23 @@ def _get_pareto_front_plot(info: _ParetoFrontInfo) -> "go.Figure":
 
 def _get_pareto_front_info(
     study: Study,
-    target_names: Optional[List[str]] = None,
+    target_names: list[str] | None = None,
     include_dominated_trials: bool = True,
-    axis_order: Optional[List[int]] = None,
-    constraints_func: Optional[Callable[[FrozenTrial], Sequence[float]]] = None,
-    targets: Optional[Callable[[FrozenTrial], Sequence[float]]] = None,
+    axis_order: list[int] | None = None,
+    constraints_func: Callable[[FrozenTrial], Sequence[float]] | None = None,
+    targets: Callable[[FrozenTrial], Sequence[float]] | None = None,
 ) -> _ParetoFrontInfo:
     if axis_order is not None:
-        warnings.warn(
-            "`axis_order` has been deprecated in v3.0.0. "
-            "This feature will be removed in v5.0.0. "
-            "See https://github.com/optuna/optuna/releases/tag/v3.0.0.",
-            FutureWarning,
+        msg = _deprecated._DEPRECATION_WARNING_TEMPLATE.format(
+            name="`axis_order`", d_ver="3.0.0", r_ver="5.0.0"
         )
+        warnings.warn(msg, FutureWarning)
+
+    if constraints_func is not None:
+        msg = _deprecated._DEPRECATION_WARNING_TEMPLATE.format(
+            name="`constraints_func`", d_ver="4.0.0", r_ver="6.0.0"
+        )
+        warnings.warn(msg, FutureWarning)
 
     if targets is not None and axis_order is not None:
         raise ValueError(
@@ -223,39 +200,35 @@ def _get_pareto_front_info(
             "Use either `targets` or `axis_order`."
         )
 
-    if constraints_func is not None:
-        warnings.warn(
-            "``constraints_func`` argument is an experimental feature."
-            " The interface can change in the future.",
-            ExperimentalWarning,
-        )
-        feasible_trials = []
-        infeasible_trials = []
-        for trial in study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,)):
+    feasible_trials = []
+    infeasible_trials = []
+    has_constraints = False
+    for trial in study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,)):
+        if constraints_func is not None:
+            # NOTE(nabenabe0928): This part is deprecated.
+            has_constraints = True
             if all(map(lambda x: x <= 0.0, constraints_func(trial))):
                 feasible_trials.append(trial)
             else:
                 infeasible_trials.append(trial)
-        best_trials = _get_pareto_front_trials_by_trials(feasible_trials, study.directions)
-        if include_dominated_trials:
-            non_best_trials = _get_non_pareto_front_trials(feasible_trials, best_trials)
-        else:
-            non_best_trials = []
+            continue
 
-        if len(best_trials) == 0:
-            _logger.warning("Your study does not have any completed and feasible trials.")
+        constraints = trial.system_attrs.get(_CONSTRAINTS_KEY)
+        has_constraints |= constraints is not None
+        if constraints is None or all(x <= 0.0 for x in constraints):
+            feasible_trials.append(trial)
+        else:
+            infeasible_trials.append(trial)
+
+    best_trials = _get_pareto_front_trials_by_trials(feasible_trials, study.directions)
+    if include_dominated_trials:
+        non_best_trials = _get_non_pareto_front_trials(feasible_trials, best_trials)
     else:
-        best_trials = study.best_trials
-        if len(best_trials) == 0:
-            _logger.warning("Your study does not have any completed trials.")
+        non_best_trials = []
 
-        if include_dominated_trials:
-            non_best_trials = _get_non_pareto_front_trials(
-                study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,)), best_trials
-            )
-        else:
-            non_best_trials = []
-        infeasible_trials = []
+    if len(best_trials) == 0:
+        what_trial = "completed" if has_constraints else "completed and feasible"
+        _logger.warning(f"Your study does not have any {what_trial} trials. ")
 
     _targets = targets
     if _targets is None:
@@ -269,12 +242,12 @@ def _get_pareto_front_info(
             )
 
     def _make_trials_with_values(
-        trials: List[FrozenTrial],
+        trials: list[FrozenTrial],
         targets: Callable[[FrozenTrial], Sequence[float]],
-    ) -> List[Tuple[FrozenTrial, List[float]]]:
+    ) -> list[tuple[FrozenTrial, list[float]]]:
         target_values = [targets(trial) for trial in trials]
         for v in target_values:
-            if not isinstance(v, collections.abc.Sequence):
+            if not isinstance(v, Sequence):
                 raise ValueError(
                     "`targets` should return a sequence of target values."
                     " your `targets` returns {}".format(type(v))
@@ -286,8 +259,8 @@ def _get_pareto_front_info(
     infeasible_trials_with_values = _make_trials_with_values(infeasible_trials, _targets)
 
     def _infer_n_targets(
-        trials_with_values: Sequence[Tuple[FrozenTrial, Sequence[float]]]
-    ) -> Optional[int]:
+        trials_with_values: Sequence[tuple[FrozenTrial, Sequence[float]]]
+    ) -> int | None:
         if len(trials_with_values) > 0:
             return len(trials_with_values[0][1])
         return None
@@ -314,7 +287,11 @@ def _get_pareto_front_info(
         )
 
     if target_names is None:
-        target_names = [f"Objective {i}" for i in range(n_targets)]
+        metric_names = study.metric_names
+        if metric_names is None:
+            target_names = [f"Objective {i}" for i in range(n_targets)]
+        else:
+            target_names = metric_names
     elif len(target_names) != n_targets:
         raise ValueError(f"The length of `target_names` is supposed to be {n_targets}.")
 
@@ -347,7 +324,7 @@ def _get_pareto_front_info(
         infeasible_trials_with_values=infeasible_trials_with_values,
         axis_order=axis_order,
         include_dominated_trials=include_dominated_trials,
-        has_constraints_func=constraints_func is not None,
+        has_constraints=has_constraints,
     )
 
 
@@ -356,8 +333,8 @@ def _targets_default(trial: FrozenTrial) -> Sequence[float]:
 
 
 def _get_non_pareto_front_trials(
-    trials: List[FrozenTrial], pareto_trials: List[FrozenTrial]
-) -> List[FrozenTrial]:
+    trials: list[FrozenTrial], pareto_trials: list[FrozenTrial]
+) -> list[FrozenTrial]:
     non_pareto_trials = []
     for trial in trials:
         if trial not in pareto_trials:
@@ -365,24 +342,15 @@ def _get_non_pareto_front_trials(
     return non_pareto_trials
 
 
-def _make_json_compatible(value: Any) -> Any:
-    try:
-        json.dumps(value)
-        return value
-    except TypeError:
-        # The value can't be converted to JSON directly, so return a string representation.
-        return str(value)
-
-
 def _make_scatter_object(
     n_targets: int,
     axis_order: Sequence[int],
     include_dominated_trials: bool,
-    trials_with_values: Sequence[Tuple[FrozenTrial, Sequence[float]]],
+    trials_with_values: Sequence[tuple[FrozenTrial, Sequence[float]]],
     hovertemplate: str,
     infeasible: bool = False,
     dominated_trials: bool = False,
-) -> Union["go.Scatter", "go.Scatter3d"]:
+) -> "go.Scatter" | "go.Scatter3d":
     trials_with_values = trials_with_values or []
 
     marker = _make_marker(
@@ -416,27 +384,12 @@ def _make_scatter_object(
         assert False, "Must not reach here"
 
 
-def _make_hovertext(trial: FrozenTrial) -> str:
-    user_attrs = {key: _make_json_compatible(value) for key, value in trial.user_attrs.items()}
-    user_attrs_dict = {"user_attrs": user_attrs} if user_attrs else {}
-    text = json.dumps(
-        {
-            "number": trial.number,
-            "values": trial.values,
-            "params": trial.params,
-            **user_attrs_dict,
-        },
-        indent=2,
-    )
-    return text.replace("\n", "<br>")
-
-
 def _make_marker(
     trials: Sequence[FrozenTrial],
     include_dominated_trials: bool,
     dominated_trials: bool = False,
     infeasible: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     if dominated_trials and not include_dominated_trials:
         assert len(trials) == 0
 

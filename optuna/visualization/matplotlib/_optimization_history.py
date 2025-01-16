@@ -1,16 +1,17 @@
-from typing import Callable
-from typing import List
-from typing import Optional
-from typing import Sequence
-from typing import Union
+from __future__ import annotations
+
+from collections.abc import Callable
+from collections.abc import Sequence
 
 import numpy as np
 
 from optuna._experimental import experimental_func
+from optuna.logging import get_logger
 from optuna.study import Study
 from optuna.trial import FrozenTrial
 from optuna.visualization._optimization_history import _get_optimization_history_info_list
 from optuna.visualization._optimization_history import _OptimizationHistoryInfo
+from optuna.visualization._optimization_history import _ValueState
 from optuna.visualization.matplotlib._matplotlib_imports import _imports
 
 
@@ -18,12 +19,14 @@ if _imports.is_successful():
     from optuna.visualization.matplotlib._matplotlib_imports import Axes
     from optuna.visualization.matplotlib._matplotlib_imports import plt
 
+_logger = get_logger(__name__)
+
 
 @experimental_func("2.2.0")
 def plot_optimization_history(
-    study: Union[Study, Sequence[Study]],
+    study: Study | Sequence[Study],
     *,
-    target: Optional[Callable[[FrozenTrial], float]] = None,
+    target: Callable[[FrozenTrial], float] | None = None,
     target_name: str = "Objective Value",
     error_bar: bool = False,
 ) -> "Axes":
@@ -32,31 +35,10 @@ def plot_optimization_history(
     .. seealso::
         Please refer to :func:`optuna.visualization.plot_optimization_history` for an example.
 
-    Example:
+    .. note::
+        You need to adjust the size of the plot by yourself using ``plt.tight_layout()`` or
+        ``plt.savefig(IMAGE_NAME, bbox_inches='tight')``.
 
-        The following code snippet shows how to plot optimization history.
-
-        .. plot::
-
-            import optuna
-            import matplotlib.pyplot as plt
-
-
-            def objective(trial):
-                x = trial.suggest_float("x", -100, 100)
-                y = trial.suggest_categorical("y", [-1, 0, 1])
-                return x ** 2 + y
-
-            sampler = optuna.samplers.TPESampler(seed=10)
-            study = optuna.create_study(sampler=sampler)
-            study.optimize(objective, n_trials=10)
-
-            optuna.visualization.matplotlib.plot_optimization_history(study)
-            plt.tight_layout()
-
-        .. note::
-            You need to adjust the size of the plot by yourself using ``plt.tight_layout()`` or
-            ``plt.savefig(IMAGE_NAME, bbox_inches='tight')``.
     Args:
         study:
             A :class:`~optuna.study.Study` object whose trials are plotted for their target values.
@@ -85,7 +67,7 @@ def plot_optimization_history(
 
 
 def _get_optimization_history_plot(
-    info_list: List[_OptimizationHistoryInfo],
+    info_list: list[_OptimizationHistoryInfo],
     target_name: str,
 ) -> "Axes":
     # Set up the graph style.
@@ -98,17 +80,43 @@ def _get_optimization_history_plot(
 
     for i, (trial_numbers, values_info, best_values_info) in enumerate(info_list):
         if values_info.stds is not None:
+            if (
+                _ValueState.Infeasible in values_info.states
+                or _ValueState.Incomplete in values_info.states
+            ):
+                _logger.warning(
+                    "Your study contains infeasible trials. "
+                    "In optimization history plot, "
+                    "error bars are calculated for only feasible trial values."
+                )
+            feasible_trial_numbers = trial_numbers
+            feasible_trial_values = values_info.values
             plt.errorbar(
-                x=trial_numbers,
-                y=values_info.values,
+                x=feasible_trial_numbers,
+                y=feasible_trial_values,
                 yerr=values_info.stds,
                 capsize=5,
                 fmt="o",
                 color="tab:blue",
             )
+            infeasible_trial_numbers: list[int] = []
+            infeasible_trial_values: list[float] = []
+        else:
+            feasible_trial_numbers = [
+                n for n, s in zip(trial_numbers, values_info.states) if s == _ValueState.Feasible
+            ]
+            infeasible_trial_numbers = [
+                n for n, s in zip(trial_numbers, values_info.states) if s == _ValueState.Infeasible
+            ]
+            feasible_trial_values = []
+            for num in feasible_trial_numbers:
+                feasible_trial_values.append(values_info.values[num])
+            infeasible_trial_values = []
+            for num in infeasible_trial_numbers:
+                infeasible_trial_values.append(values_info.values[num])
         ax.scatter(
-            x=trial_numbers,
-            y=values_info.values,
+            x=feasible_trial_numbers,
+            y=feasible_trial_values,
             color=cmap(0) if len(info_list) == 1 else cmap(2 * i),
             alpha=1,
             label=values_info.label_name,
@@ -118,7 +126,6 @@ def _get_optimization_history_plot(
             ax.plot(
                 trial_numbers,
                 best_values_info.values,
-                marker="o",
                 color=cmap(3) if len(info_list) == 1 else cmap(2 * i + 1),
                 alpha=0.5,
                 label=best_values_info.label_name,
@@ -134,5 +141,10 @@ def _get_optimization_history_plot(
                     alpha=0.4,
                 )
             ax.legend()
+        ax.scatter(
+            x=infeasible_trial_numbers,
+            y=infeasible_trial_values,
+            color="#cccccc",
+        )
     plt.legend(bbox_to_anchor=(1.05, 1.0), loc="upper left")
     return ax

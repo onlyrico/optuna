@@ -1,6 +1,9 @@
+import datetime
 import logging
+from textwrap import dedent
 from typing import cast
 
+import numpy as np
 import pytest
 from pytest import LogCaptureFixture
 
@@ -15,6 +18,7 @@ from optuna.visualization import is_available
 from optuna.visualization._utils import _check_plot_args
 from optuna.visualization._utils import _filter_nonfinite
 from optuna.visualization._utils import _is_log_scale
+from optuna.visualization._utils import _make_hovertext
 
 
 def test_is_log_scale() -> None:
@@ -63,9 +67,7 @@ def test_check_plot_args() -> None:
         _check_plot_args(study, lambda t: cast(float, t.value), "Objective Value")
 
 
-@pytest.mark.parametrize(
-    "value, expected", [(float("inf"), 1), (-float("inf"), 1), (float("nan"), 1), (0.0, 2)]
-)
+@pytest.mark.parametrize("value, expected", [(float("inf"), 1), (-float("inf"), 1), (0.0, 2)])
 def test_filter_inf_trials(value: float, expected: int) -> None:
     study = create_study()
     study.add_trial(
@@ -93,11 +95,9 @@ def test_filter_inf_trials(value: float, expected: int) -> None:
     [
         (float("inf"), 0, 2),
         (-float("inf"), 0, 2),
-        (float("nan"), 0, 2),
         (0.0, 0, 3),
         (float("inf"), 1, 1),
         (-float("inf"), 1, 1),
-        (float("nan"), 1, 1),
         (0.0, 1, 3),
     ],
 )
@@ -175,3 +175,111 @@ def test_filter_nonfinite_with_invalid_target() -> None:
     trials = study.get_trials(states=(TrialState.COMPLETE,))
     with pytest.raises(ValueError):
         _filter_nonfinite(trials, target=lambda t: "invalid target")  # type: ignore
+
+
+def test_make_hovertext() -> None:
+    trial_no_user_attrs = FrozenTrial(
+        number=0,
+        trial_id=0,
+        state=TrialState.COMPLETE,
+        value=0.2,
+        datetime_start=datetime.datetime.now(),
+        datetime_complete=datetime.datetime.now(),
+        params={"x": 10},
+        distributions={"x": FloatDistribution(5, 12)},
+        user_attrs={},
+        system_attrs={},
+        intermediate_values={},
+    )
+    assert (
+        _make_hovertext(trial_no_user_attrs)
+        == dedent(
+            """
+        {
+          "number": 0,
+          "values": [
+            0.2
+          ],
+          "params": {
+            "x": 10
+          }
+        }
+        """
+        )
+        .strip()
+        .replace("\n", "<br>")
+    )
+
+    trial_user_attrs_valid_json = FrozenTrial(
+        number=0,
+        trial_id=0,
+        state=TrialState.COMPLETE,
+        value=0.2,
+        datetime_start=datetime.datetime.now(),
+        datetime_complete=datetime.datetime.now(),
+        params={"x": 10},
+        distributions={"x": FloatDistribution(5, 12)},
+        user_attrs={"a": 42, "b": 3.14},
+        system_attrs={},
+        intermediate_values={},
+    )
+    assert (
+        _make_hovertext(trial_user_attrs_valid_json)
+        == dedent(
+            """
+        {
+          "number": 0,
+          "values": [
+            0.2
+          ],
+          "params": {
+            "x": 10
+          },
+          "user_attrs": {
+            "a": 42,
+            "b": 3.14
+          }
+        }
+        """
+        )
+        .strip()
+        .replace("\n", "<br>")
+    )
+
+    trial_user_attrs_invalid_json = FrozenTrial(
+        number=0,
+        trial_id=0,
+        state=TrialState.COMPLETE,
+        value=0.2,
+        datetime_start=datetime.datetime.now(),
+        datetime_complete=datetime.datetime.now(),
+        params={"x": 10},
+        distributions={"x": FloatDistribution(5, 12)},
+        user_attrs={"a": 42, "b": 3.14, "c": np.zeros(1), "d": np.nan},
+        system_attrs={},
+        intermediate_values={},
+    )
+    assert (
+        _make_hovertext(trial_user_attrs_invalid_json)
+        == dedent(
+            """
+        {
+          "number": 0,
+          "values": [
+            0.2
+          ],
+          "params": {
+            "x": 10
+          },
+          "user_attrs": {
+            "a": 42,
+            "b": 3.14,
+            "c": "[0.]",
+            "d": NaN
+          }
+        }
+        """
+        )
+        .strip()
+        .replace("\n", "<br>")
+    )

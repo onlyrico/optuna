@@ -1,10 +1,7 @@
+from __future__ import annotations
+
+from collections.abc import Callable
 import random
-from typing import Callable
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Tuple
-from typing import Union
 from unittest.mock import patch
 from unittest.mock import PropertyMock
 
@@ -18,7 +15,7 @@ from optuna.samplers import TPESampler
 
 class MockSystemAttr:
     def __init__(self) -> None:
-        self.value = {}  # type: Dict[str, dict]
+        self.value: dict[str, dict] = {}
 
     def set_trial_system_attr(self, _: int, key: str, value: dict) -> None:
         self.value[key] = value
@@ -29,7 +26,7 @@ def suggest(
     study: optuna.Study,
     trial: optuna.trial.FrozenTrial,
     distribution: optuna.distributions.BaseDistribution,
-    past_trials: List[optuna.trial.FrozenTrial],
+    past_trials: list[optuna.trial.FrozenTrial],
 ) -> float:
     attrs = MockSystemAttr()
     with patch.object(study._storage, "get_all_trials", return_value=past_trials), patch.object(
@@ -92,7 +89,7 @@ def test_multi_objective_sample_independent_n_startup_trial() -> None:
 
     def _suggest_and_return_call_count(
         sampler: optuna.samplers.BaseSampler,
-        past_trials: List[optuna.trial.FrozenTrial],
+        past_trials: list[optuna.trial.FrozenTrial],
     ) -> int:
         attrs = MockSystemAttr()
         with patch.object(
@@ -114,6 +111,7 @@ def test_multi_objective_sample_independent_n_startup_trial() -> None:
             mock1.return_value = attrs.value
             mock2.return_value = attrs.value
             sampler.sample_independent(study, trial, "param-a", dist)
+        study._thread_local.cached_all_trials = None
         return sample_method.call_count
 
     sampler = TPESampler(n_startup_trials=16, seed=0)
@@ -144,7 +142,7 @@ def test_multi_objective_sample_independent_misc_arguments() -> None:
 
 @pytest.mark.parametrize("log, step", [(False, None), (True, None), (False, 0.1)])
 def test_multi_objective_sample_independent_float_distributions(
-    log: bool, step: Optional[float]
+    log: bool, step: float | None
 ) -> None:
     # Prepare sample from float distribution for checking other distributions.
     study = optuna.create_study(directions=["minimize", "maximize"])
@@ -152,9 +150,7 @@ def test_multi_objective_sample_independent_float_distributions(
     float_dist = optuna.distributions.FloatDistribution(1.0, 100.0, log=log, step=step)
 
     if float_dist.step:
-        value_fn: Optional[Callable[[int], float]] = (
-            lambda number: int(random.random() * 1000) * 0.1
-        )
+        value_fn: Callable[[int], float] | None = lambda number: int(random.random() * 1000) * 0.1
     else:
         value_fn = None
 
@@ -265,6 +261,7 @@ def test_multi_objective_sample_independent_handle_unsuccessful_states(
     trial = frozen_trial_factory(32, [0, 0])
     sampler = TPESampler(seed=0)
     all_success_suggestion = suggest(sampler, study, trial, dist, past_trials)
+    study._thread_local.cached_all_trials = None
 
     # Test unsuccessful trials are handled differently.
     state_fn = build_state_fn(state)
@@ -303,173 +300,64 @@ def test_multi_objective_sample_independent_ignored_states() -> None:
     assert len(set(suggestions)) == 1
 
 
-@pytest.mark.parametrize("int_value", [-5, 5, 0])
-@pytest.mark.parametrize(
-    "categorical_value", [1, 0.0, "A", None, True, float("inf"), float("nan")]
-)
-@pytest.mark.parametrize("objective_value", [-5.0, 5.0, 0.0, -float("inf"), float("inf")])
-@pytest.mark.parametrize("multivariate", [True, False])
-@pytest.mark.parametrize("constant_liar", [True, False])
-@pytest.mark.filterwarnings("ignore::optuna.exceptions.ExperimentalWarning")
-def test_multi_objective_get_observation_pairs(
-    int_value: int,
-    categorical_value: optuna.distributions.CategoricalChoiceType,
-    objective_value: float,
-    multivariate: bool,
-    constant_liar: bool,
-) -> None:
-    def objective(trial: optuna.trial.Trial) -> Tuple[float, float]:
-        trial.suggest_int("x", int_value, int_value)
-        trial.suggest_categorical("y", [categorical_value])
-        return objective_value, objective_value
+@pytest.mark.parametrize("direction0", ["minimize", "maximize"])
+@pytest.mark.parametrize("direction1", ["minimize", "maximize"])
+def test_split_complete_trials_multi_objective(direction0: str, direction1: str) -> None:
+    study = optuna.create_study(directions=(direction0, direction1))
 
-    sampler = TPESampler(seed=0, multivariate=multivariate, constant_liar=constant_liar)
-    study = optuna.create_study(directions=["minimize", "maximize"], sampler=sampler)
-    study.optimize(objective, n_trials=2)
-    study.add_trial(
-        optuna.create_trial(
-            state=optuna.trial.TrialState.RUNNING,
-            params={"x": int_value, "y": categorical_value},
-            distributions={
-                "x": optuna.distributions.IntDistribution(int_value, int_value),
-                "y": optuna.distributions.CategoricalDistribution([categorical_value]),
-            },
+    for values in ([-2.0, -1.0], [3.0, 3.0], [0.0, 1.0], [-1.0, 0.0]):
+        value0, value1 = values
+        if direction0 == "maximize":
+            value0 = -value0
+        if direction1 == "maximize":
+            value1 = -value1
+        study.add_trial(
+            optuna.create_trial(
+                state=optuna.trial.TrialState.COMPLETE,
+                values=(value0, value1),
+                params={"x": 0},
+                distributions={"x": optuna.distributions.FloatDistribution(-1.0, 1.0)},
+            )
         )
-    )
 
-    assert _tpe.sampler._get_observation_pairs(study, ["x"], constant_liar) == (
-        {"x": [int_value, int_value]},
-        [(-float("inf"), [objective_value, -objective_value]) for _ in range(2)],
-        None,
-    )
-    assert _tpe.sampler._get_observation_pairs(study, ["y"], constant_liar) == (
-        {"y": [0, 0]},
-        [(-float("inf"), [objective_value, -objective_value]) for _ in range(2)],
-        None,
-    )
-    assert _tpe.sampler._get_observation_pairs(study, ["x", "y"], constant_liar) == (
-        {"x": [int_value, int_value], "y": [0, 0]},
-        [(-float("inf"), [objective_value, -objective_value]) for _ in range(2)],
-        None,
-    )
-    assert _tpe.sampler._get_observation_pairs(study, ["z"], constant_liar) == (
-        {"z": [None, None]},
-        [(-float("inf"), [objective_value, -objective_value]) for _ in range(2)],
-        None,
-    )
-
-
-@pytest.mark.parametrize("constraint_value", [-2, 2])
-def test_multi_objective_get_observation_pairs_constrained(constraint_value: int) -> None:
-    def objective(trial: optuna.trial.Trial) -> Tuple[float, float]:
-        trial.suggest_int("x", 5, 5)
-        trial.set_user_attr("constraint", (constraint_value, -1))
-        return 5.0, 5.0
-
-    sampler = TPESampler(constraints_func=lambda trial: trial.user_attrs["constraint"], seed=0)
-    study = optuna.create_study(directions=["minimize", "maximize"], sampler=sampler)
-    study.optimize(objective, n_trials=5)
-
-    violations = [max(0, constraint_value) for _ in range(5)]
-    assert _tpe.sampler._get_observation_pairs(study, ["x"], constraints_enabled=True) == (
-        {"x": [5.0, 5.0, 5.0, 5.0, 5.0]},
-        [(-float("inf"), [5.0, -5.0]) for _ in range(5)],
-        violations,
-    )
-    assert _tpe.sampler._get_observation_pairs(study, ["y"], constraints_enabled=True) == (
-        {"y": [None, None, None, None, None]},
-        [(-float("inf"), [5.0, -5.0]) for _ in range(5)],
-        violations,
-    )
-
-
-def test_multi_objective_split_observation_pairs() -> None:
-    indices_below, indices_above = _tpe.sampler._split_observation_pairs(
-        [
-            (-float("inf"), [-2.0, -1.0]),
-            (-float("inf"), [3.0, 3.0]),
-            (-float("inf"), [0.0, 1.0]),
-            (-float("inf"), [-1.0, 0.0]),
-        ],
+    below_trials, above_trials = _tpe.sampler._split_complete_trials_multi_objective(
+        study.trials,
+        study,
         2,
-        None,
     )
-    assert list(indices_below) == [0, 3]
-    assert list(indices_above) == [1, 2]
+    assert [trial.number for trial in below_trials] == [0, 3]
+    assert [trial.number for trial in above_trials] == [1, 2]
 
 
-def test_multi_objective_split_observation_pairs_with_all_indices_below() -> None:
-    indices_below, indices_above = _tpe.sampler._split_observation_pairs(
-        [
-            (-float("inf"), [1.0, 1.0]),
-        ],
-        1,
-        None,
-    )
-    assert list(indices_below) == [0]
-    assert list(indices_above) == []
-
-
-def test_calculate_nondomination_rank() -> None:
-    # Single objective
-    test_case = np.asarray([[10], [20], [20], [30]])
-    ranks = list(_tpe.sampler._calculate_nondomination_rank(test_case))
-    assert ranks == [0, 1, 1, 2]
-
-    # Two objectives
-    test_case = np.asarray([[10, 30], [10, 10], [20, 20], [30, 10], [15, 15]])
-    ranks = list(_tpe.sampler._calculate_nondomination_rank(test_case))
-    assert ranks == [1, 0, 2, 1, 1]
-
-    # Three objectives
-    test_case = np.asarray([[5, 5, 4], [5, 5, 5], [9, 9, 0], [5, 7, 5], [0, 0, 9], [0, 9, 9]])
-    ranks = list(_tpe.sampler._calculate_nondomination_rank(test_case))
-    assert ranks == [0, 1, 0, 2, 0, 1]
-
-    # The negative values are included.
-    test_case = np.asarray(
-        [[-5, -5, -4], [-5, -5, 5], [-9, -9, 0], [5, 7, 5], [0, 0, -9], [0, -9, 9]]
-    )
-    ranks = list(_tpe.sampler._calculate_nondomination_rank(test_case))
-    assert ranks == [0, 1, 0, 2, 0, 1]
-
-    # The +inf is included.
-    test_case = np.asarray(
-        [[1, 1], [1, float("inf")], [float("inf"), 1], [float("inf"), float("inf")]]
-    )
-    ranks = list(_tpe.sampler._calculate_nondomination_rank(test_case))
-    assert ranks == [0, 1, 1, 2]
-
-    # The -inf is included.
-    test_case = np.asarray(
-        [[1, 1], [1, -float("inf")], [-float("inf"), 1], [-float("inf"), -float("inf")]]
-    )
-    ranks = list(_tpe.sampler._calculate_nondomination_rank(test_case))
-    assert ranks == [2, 1, 1, 0]
+def test_split_complete_trials_multi_objective_empty() -> None:
+    study = optuna.create_study(directions=("minimize", "minimize"))
+    assert _tpe.sampler._split_complete_trials_multi_objective([], study, 0) == ([], [])
 
 
 def test_calculate_weights_below_for_multi_objective() -> None:
     # No sample.
-    weights_below = _tpe.sampler._calculate_weights_below_for_multi_objective(
-        [(0, [0.2, 0.5]), (0, [0.9, 0.4]), (0, [1, 1])],
-        np.array([], np.int64),
-        None,
-    )
+    study = optuna.create_study(directions=["minimize", "minimize"])
+    weights_below = _tpe.sampler._calculate_weights_below_for_multi_objective(study, [], None)
     assert len(weights_below) == 0
 
     # One sample.
+    study = optuna.create_study(directions=["minimize", "minimize"])
+    trial0 = optuna.create_trial(values=[0.2, 0.5])
+    study.add_trials([trial0])
     weights_below = _tpe.sampler._calculate_weights_below_for_multi_objective(
-        [(0, [0.2, 0.5]), (0, [0.9, 0.4]), (0, [1, 1])],
-        np.array([0]),
-        None,
+        study, [trial0], None
     )
     assert len(weights_below) == 1
     assert sum(weights_below) > 0
 
     # Two samples.
+    study = optuna.create_study(directions=["minimize", "minimize"])
+    trial0 = optuna.create_trial(values=[0.2, 0.5])
+    trial1 = optuna.create_trial(values=[0.9, 0.4])
+    study.add_trials([trial0, trial1])
     weights_below = _tpe.sampler._calculate_weights_below_for_multi_objective(
-        [(0, [0.2, 0.5]), (0, [0.9, 0.4]), (0, [1, 1])],
-        np.array([0, 1]),
+        study,
+        [trial0, trial1],
         None,
     )
     assert len(weights_below) == 2
@@ -477,9 +365,13 @@ def test_calculate_weights_below_for_multi_objective() -> None:
     assert sum(weights_below) > 0
 
     # Two equally contributed samples.
+    study = optuna.create_study(directions=["minimize", "minimize"])
+    trial0 = optuna.create_trial(values=[0.2, 0.8])
+    trial1 = optuna.create_trial(values=[0.8, 0.2])
+    study.add_trials([trial0, trial1])
     weights_below = _tpe.sampler._calculate_weights_below_for_multi_objective(
-        [(0, [0.2, 0.8]), (0, [0.8, 0.2]), (0, [1, 1])],
-        np.array([0, 1]),
+        study,
+        [trial0, trial1],
         None,
     )
     assert len(weights_below) == 2
@@ -487,9 +379,13 @@ def test_calculate_weights_below_for_multi_objective() -> None:
     assert sum(weights_below) > 0
 
     # Duplicated samples.
+    study = optuna.create_study(directions=["minimize", "minimize"])
+    trial0 = optuna.create_trial(values=[0.2, 0.8])
+    trial1 = optuna.create_trial(values=[0.2, 0.8])
+    study.add_trials([trial0, trial1])
     weights_below = _tpe.sampler._calculate_weights_below_for_multi_objective(
-        [(0, [0.2, 0.8]), (0, [0.2, 0.8]), (0, [1, 1])],
-        np.array([0, 1]),
+        study,
+        [trial0, trial1],
         None,
     )
     assert len(weights_below) == 2
@@ -497,9 +393,14 @@ def test_calculate_weights_below_for_multi_objective() -> None:
     assert sum(weights_below) > 0
 
     # Three samples.
+    study = optuna.create_study(directions=["minimize", "minimize"])
+    trial0 = optuna.create_trial(values=[0.3, 0.3])
+    trial1 = optuna.create_trial(values=[0.2, 0.8])
+    trial2 = optuna.create_trial(values=[0.8, 0.2])
+    study.add_trials([trial0, trial1, trial2])
     weights_below = _tpe.sampler._calculate_weights_below_for_multi_objective(
-        [(0, [0.3, 0.3]), (0, [0.2, 0.8]), (0, [0.8, 0.2]), (0, [1, 1])],
-        np.array([0, 1, 2]),
+        study,
+        [trial0, trial1, trial2],
         None,
     )
     assert len(weights_below) == 3
@@ -509,9 +410,14 @@ def test_calculate_weights_below_for_multi_objective() -> None:
     assert sum(weights_below) > 0
 
     # Zero/negative objective values.
+    study = optuna.create_study(directions=["minimize", "minimize"])
+    trial0 = optuna.create_trial(values=[-0.3, -0.3])
+    trial1 = optuna.create_trial(values=[0.0, -0.8])
+    trial2 = optuna.create_trial(values=[-0.8, 0.0])
+    study.add_trials([trial0, trial1, trial2])
     weights_below = _tpe.sampler._calculate_weights_below_for_multi_objective(
-        [(0, [-0.3, -0.3]), (0, [0.0, -0.8]), (0, [-0.8, 0.0]), (0, [1, 1])],
-        np.array([0, 1, 2]),
+        study,
+        [trial0, trial1, trial2],
         None,
     )
     assert len(weights_below) == 3
@@ -521,24 +427,30 @@ def test_calculate_weights_below_for_multi_objective() -> None:
     assert sum(weights_below) > 0
 
     # +/-inf objective values.
+    study = optuna.create_study(directions=["minimize", "minimize"])
+    trial0 = optuna.create_trial(values=[-float("inf"), -float("inf")])
+    trial1 = optuna.create_trial(values=[0.0, -float("inf")])
+    trial2 = optuna.create_trial(values=[-float("inf"), 0.0])
+    study.add_trials([trial0, trial1, trial2])
     weights_below = _tpe.sampler._calculate_weights_below_for_multi_objective(
-        [
-            (0, [-float("inf"), -float("inf")]),
-            (0, [0.0, -float("inf")]),
-            (0, [-float("inf"), 0.0]),
-            (0, [float("inf"), float("inf")]),
-        ],
-        np.array([0, 1, 2]),
+        study,
+        [trial0, trial1, trial2],
         None,
     )
     assert len(weights_below) == 3
-    assert all([np.isnan(w) for w in weights_below])
+    assert not any([np.isnan(w) for w in weights_below])
+    assert sum(weights_below) > 0
 
     # Three samples with two infeasible trials.
+    study = optuna.create_study(directions=["minimize", "minimize"])
+    trial0 = optuna.create_trial(values=[0.3, 0.3], system_attrs={"constraints": 2})
+    trial1 = optuna.create_trial(values=[0.2, 0.8], system_attrs={"constraints": 8})
+    trial2 = optuna.create_trial(values=[0.8, 0.2], system_attrs={"constraints": 0})
+    study.add_trials([trial0, trial1, trial2])
     weights_below = _tpe.sampler._calculate_weights_below_for_multi_objective(
-        [(0, [0.3, 0.3]), (0, [0.2, 0.8]), (0, [0.8, 0.2]), (0, [1, 1])],
-        np.array([0, 1, 2]),
-        [2, 8, 0],
+        study,
+        [trial0, trial1, trial2],
+        lambda trial: [trial.system_attrs["constraints"]],
     )
     assert len(weights_below) == 3
     assert weights_below[0] == _tpe.sampler.EPS
@@ -548,11 +460,11 @@ def test_calculate_weights_below_for_multi_objective() -> None:
 
 def frozen_trial_factory(
     number: int,
-    values: List[float],
+    values: list[float],
     dist: optuna.distributions.BaseDistribution = optuna.distributions.FloatDistribution(
         1.0, 100.0
     ),
-    value_fn: Optional[Callable[[int], Union[int, float]]] = None,
+    value_fn: Callable[[int], int | float] | None = None,
     state_fn: Callable[
         [int], optuna.trial.TrialState
     ] = lambda _: optuna.trial.TrialState.COMPLETE,

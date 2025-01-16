@@ -1,8 +1,8 @@
 """
 .. _first:
 
-1. Lightweight, versatile, and platform agnostic architecture
-=============================================================
+Lightweight, versatile, and platform agnostic architecture
+==========================================================
 
 Optuna is entirely written in Python and has few dependencies.
 This means that we can quickly move to the real example once you get interested in Optuna.
@@ -14,7 +14,6 @@ Quadratic Function Example
 Usually, Optuna is used to optimize hyperparameters, but as an example,
 let's optimize a simple quadratic function: :math:`(x - 2)^2`.
 """
-
 
 ###################################################################################################
 # First of all, import :mod:`optuna`.

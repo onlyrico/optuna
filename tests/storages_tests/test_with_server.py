@@ -1,14 +1,17 @@
+from __future__ import annotations
+
+from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures import ThreadPoolExecutor
 import os
 import pickle
-from typing import Sequence
 
 import numpy as np
 import pytest
 
 import optuna
 from optuna.storages import BaseStorage
+from optuna.storages.journal import JournalRedisBackend
 from optuna.study import StudyDirection
 from optuna.trial import TrialState
 
@@ -39,7 +42,7 @@ def get_storage() -> BaseStorage:
     if storage_mode == "":
         storage = optuna.storages.RDBStorage(url=storage_url)
     elif storage_mode == "journal-redis":
-        journal_redis_storage = optuna.storages.JournalRedisStorage(storage_url)
+        journal_redis_storage = JournalRedisBackend(storage_url)
         storage = optuna.storages.JournalStorage(journal_redis_storage)
     else:
         assert False, f"The mode {storage_mode} is not supported."
@@ -63,11 +66,14 @@ def _check_trials(trials: Sequence[optuna.trial.FrozenTrial]) -> None:
     assert all("x" in trial.params for trial in trials)
     assert all("y" in trial.params for trial in trials)
     assert all(
-        np.isclose(
-            np.asarray([trial.value for trial in trials]),
-            [f(trial.params["x"], trial.params["y"]) for trial in trials],
-            atol=1e-4,
-        ).tolist()
+        [
+            condition
+            for condition in np.isclose(
+                np.asarray([trial.value for trial in trials]),
+                [f(trial.params["x"], trial.params["y"]) for trial in trials],
+                atol=1e-4,
+            )
+        ]
     )
 
     # Check intermediate values.
@@ -77,11 +83,14 @@ def _check_trials(trials: Sequence[optuna.trial.FrozenTrial]) -> None:
 
     # Check attrs.
     assert all(
-        np.isclose(
-            [trial.user_attrs["x"] for trial in trials],
-            [trial.params["x"] for trial in trials],
-            atol=1e-4,
-        ).tolist()
+        [
+            condition
+            for condition in np.isclose(
+                [trial.user_attrs["x"] for trial in trials],
+                [trial.params["x"] for trial in trials],
+                atol=1e-4,
+            )
+        ]
     )
 
 
@@ -180,3 +189,25 @@ def test_pickle_storage() -> None:
     storage_system_attrs = storage.get_study_system_attrs(study_id)
     restored_storage_system_attrs = restored_storage.get_study_system_attrs(study_id)
     assert storage_system_attrs == restored_storage_system_attrs == {"key": "pickle"}
+
+
+@pytest.mark.parametrize("direction", [StudyDirection.MAXIMIZE, StudyDirection.MINIMIZE])
+@pytest.mark.parametrize(
+    "values",
+    [
+        [0.0, 1.0, 2.0],
+        [0.0, float("inf"), 1.0],
+        [0.0, float("-inf"), 1.0],
+        [float("inf"), 0.0, 1.0, float("-inf")],
+        [float("inf")],
+        [float("-inf")],
+    ],
+)
+def test_get_best_trial(direction: StudyDirection, values: Sequence[float]) -> None:
+    storage = get_storage()
+    study = optuna.create_study(direction=direction, storage=storage)
+    study.add_trials(
+        [optuna.create_trial(params={}, distributions={}, value=value) for value in values]
+    )
+    expected_value = max(values) if direction == StudyDirection.MAXIMIZE else min(values)
+    assert study.best_value == expected_value

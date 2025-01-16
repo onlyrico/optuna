@@ -1,7 +1,7 @@
 import math
 from typing import Any
 
-import numpy
+import numpy as np
 import pytest
 
 from optuna._transform import _SearchSpaceTransform
@@ -36,23 +36,23 @@ def test_search_space_transform_shapes_dtypes(param: Any, distribution: BaseDist
         expected_bounds_shape = (1, 2)
         expected_params_shape = (1,)
     assert trans.bounds.shape == expected_bounds_shape
-    assert trans.bounds.dtype == numpy.float64
+    assert trans.bounds.dtype == np.float64
     assert trans_params.shape == expected_params_shape
-    assert trans_params.dtype == numpy.float64
+    assert trans_params.dtype == np.float64
 
 
 def test_search_space_transform_encoding() -> None:
     trans = _SearchSpaceTransform({"x0": IntDistribution(0, 3)})
 
     assert len(trans.column_to_encoded_columns) == 1
-    numpy.testing.assert_equal(trans.column_to_encoded_columns[0], numpy.array([0]))
-    numpy.testing.assert_equal(trans.encoded_column_to_column, numpy.array([0]))
+    np.testing.assert_equal(trans.column_to_encoded_columns[0], np.array([0]))
+    np.testing.assert_equal(trans.encoded_column_to_column, np.array([0]))
 
     trans = _SearchSpaceTransform({"x0": CategoricalDistribution(["foo", "bar", "baz"])})
 
     assert len(trans.column_to_encoded_columns) == 1
-    numpy.testing.assert_equal(trans.column_to_encoded_columns[0], numpy.array([0, 1, 2]))
-    numpy.testing.assert_equal(trans.encoded_column_to_column, numpy.array([0, 0, 0]))
+    np.testing.assert_equal(trans.column_to_encoded_columns[0], np.array([0, 1, 2]))
+    np.testing.assert_equal(trans.encoded_column_to_column, np.array([0, 0, 0]))
 
     trans = _SearchSpaceTransform(
         {
@@ -63,14 +63,15 @@ def test_search_space_transform_encoding() -> None:
     )
 
     assert len(trans.column_to_encoded_columns) == 3
-    numpy.testing.assert_equal(trans.column_to_encoded_columns[0], numpy.array([0]))
-    numpy.testing.assert_equal(trans.column_to_encoded_columns[1], numpy.array([1, 2, 3]))
-    numpy.testing.assert_equal(trans.column_to_encoded_columns[2], numpy.array([4]))
-    numpy.testing.assert_equal(trans.encoded_column_to_column, numpy.array([0, 1, 1, 1, 2]))
+    np.testing.assert_equal(trans.column_to_encoded_columns[0], np.array([0]))
+    np.testing.assert_equal(trans.column_to_encoded_columns[1], np.array([1, 2, 3]))
+    np.testing.assert_equal(trans.column_to_encoded_columns[2], np.array([4]))
+    np.testing.assert_equal(trans.encoded_column_to_column, np.array([0, 1, 1, 1, 2]))
 
 
 @pytest.mark.parametrize("transform_log", [True, False])
 @pytest.mark.parametrize("transform_step", [True, False])
+@pytest.mark.parametrize("transform_0_1", [True, False])
 @pytest.mark.parametrize(
     "param,distribution",
     [
@@ -91,30 +92,39 @@ def test_search_space_transform_encoding() -> None:
 def test_search_space_transform_numerical(
     transform_log: bool,
     transform_step: bool,
+    transform_0_1: bool,
     param: Any,
     distribution: BaseDistribution,
 ) -> None:
-    trans = _SearchSpaceTransform({"x0": distribution}, transform_log, transform_step)
+    trans = _SearchSpaceTransform(
+        {"x0": distribution},
+        transform_log=transform_log,
+        transform_step=transform_step,
+        transform_0_1=transform_0_1,
+    )
 
-    expected_low = distribution.low  # type: ignore
-    expected_high = distribution.high  # type: ignore
-
-    if isinstance(distribution, FloatDistribution):
-        if transform_log and distribution.log:
-            expected_low = math.log(expected_low)
-            expected_high = math.log(expected_high)
-        if transform_step and distribution.step is not None:
-            half_step = 0.5 * distribution.step
-            expected_low -= half_step
-            expected_high += half_step
-    elif isinstance(distribution, IntDistribution):
-        if transform_step:
-            half_step = 0.5 * distribution.step
-            expected_low -= half_step
-            expected_high += half_step
-        if distribution.log and transform_log:
-            expected_low = math.log(expected_low)
-            expected_high = math.log(expected_high)
+    if transform_0_1:
+        expected_low = 0.0
+        expected_high = 1.0
+    else:
+        expected_low = distribution.low  # type: ignore
+        expected_high = distribution.high  # type: ignore
+        if isinstance(distribution, FloatDistribution):
+            if transform_log and distribution.log:
+                expected_low = math.log(expected_low)
+                expected_high = math.log(expected_high)
+            if transform_step and distribution.step is not None:
+                half_step = 0.5 * distribution.step
+                expected_low -= half_step
+                expected_high += half_step
+        elif isinstance(distribution, IntDistribution):
+            if transform_step:
+                half_step = 0.5 * distribution.step
+                expected_low -= half_step
+                expected_high += half_step
+            if distribution.log and transform_log:
+                expected_low = math.log(expected_low)
+                expected_high = math.log(expected_high)
 
     for bound in trans.bounds:
         assert bound[0] == expected_low
@@ -123,6 +133,7 @@ def test_search_space_transform_numerical(
     trans_params = trans.transform({"x0": param})
     assert trans_params.size == 1
     assert expected_low <= trans_params <= expected_high
+    assert np.isclose(param, trans.untransform(trans_params)["x0"])
 
 
 @pytest.mark.parametrize(

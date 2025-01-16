@@ -1,21 +1,22 @@
+from __future__ import annotations
+
 import copy
 from datetime import datetime
 import pickle
 import random
+from time import sleep
 from typing import Any
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Tuple
 
 import numpy as np
 import pytest
 
 import optuna
+from optuna._typing import JSONSerializable
 from optuna.distributions import CategoricalDistribution
 from optuna.distributions import FloatDistribution
 from optuna.storages import _CachedStorage
 from optuna.storages import BaseStorage
+from optuna.storages import GrpcStorageProxy
 from optuna.storages import InMemoryStorage
 from optuna.storages import RDBStorage
 from optuna.storages._base import DEFAULT_STUDY_NAME_PREFIX
@@ -29,7 +30,7 @@ from optuna.trial import TrialState
 
 ALL_STATES = list(TrialState)
 
-EXAMPLE_ATTRS = {
+EXAMPLE_ATTRS: dict[str, JSONSerializable] = {
     "dataset": "MNIST",
     "none": None,
     "json_serializable": {"baseline_score": 0.001, "tags": ["image", "classification"]},
@@ -69,7 +70,7 @@ def test_create_new_study_unique_id(storage_mode: str) -> None:
         study_id3 = storage.create_new_study(directions=[StudyDirection.MINIMIZE])
 
         # Study id must not be reused after deletion.
-        if not isinstance(storage, (RDBStorage, _CachedStorage)):
+        if not isinstance(storage, (RDBStorage, _CachedStorage, GrpcStorageProxy)):
             # TODO(ytsmiling) Fix RDBStorage so that it does not reuse study_id.
             assert len({study_id, study_id2, study_id3}) == 3
         frozen_studies = storage.get_all_studies()
@@ -255,7 +256,7 @@ def test_study_user_and_system_attrs_confusion(storage_mode: str) -> None:
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_create_new_trial(storage_mode: str) -> None:
     def _check_trials(
-        trials: List[FrozenTrial],
+        trials: list[FrozenTrial],
         idx: int,
         trial_id: int,
         time_before_creation: datetime,
@@ -288,7 +289,9 @@ def test_create_new_trial(storage_mode: str) -> None:
         n_trial_in_study = 3
         for i in range(n_trial_in_study):
             time_before_creation = datetime.now()
+            sleep(0.001)  # Sleep 1ms to avoid faulty assertion on Windows OS.
             trial_id = storage.create_new_trial(study_id)
+            sleep(0.001)
             time_after_creation = datetime.now()
 
             trials = storage.get_all_trials(study_id)
@@ -333,7 +336,7 @@ def test_create_new_trial_with_template_trial(
         trial_id=-1,  # dummy value (unused).
     )
 
-    def _check_trials(trials: List[FrozenTrial], idx: int, trial_id: int) -> None:
+    def _check_trials(trials: list[FrozenTrial], idx: int, trial_id: int) -> None:
         assert len(trials) == idx + 1
         assert len({t._trial_id for t in trials}) == idx + 1
         assert trial_id in {t._trial_id for t in trials}
@@ -480,11 +483,6 @@ def test_set_trial_param(storage_mode: str) -> None:
         # Check set_param breaks neither get_trial nor get_trial_params.
         assert storage.get_trial(trial_id_1).params == {"x": 0.5, "y": "Meguro"}
         assert storage.get_trial_params(trial_id_1) == {"x": 0.5, "y": "Meguro"}
-        # Duplicated registration should overwrite.
-        storage.set_trial_param(trial_id_1, "x", 0.6, distribution_x)
-        assert storage.get_trial_param(trial_id_1, "x") == 0.6
-        assert storage.get_trial(trial_id_1).params == {"x": 0.6, "y": "Meguro"}
-        assert storage.get_trial_params(trial_id_1) == {"x": 0.6, "y": "Meguro"}
 
         # Set params to another trial.
         storage.set_trial_param(trial_id_2, "x", 0.3, distribution_x)
@@ -724,7 +722,7 @@ def test_get_all_studies(storage_mode: str) -> None:
         frozen_studies = storage.get_all_studies()
         assert len(frozen_studies) == len(expected_frozen_studies)
         for _, expected_frozen_study in expected_frozen_studies.items():
-            frozen_study: Optional[FrozenStudy] = None
+            frozen_study: FrozenStudy | None = None
             for s in frozen_studies:
                 if s.study_name == expected_frozen_study.study_name:
                     frozen_study = s
@@ -767,6 +765,28 @@ def test_get_all_trials(storage_mode: str) -> None:
         non_existent_study_id = max(study_to_trials.keys()) + 1
         with pytest.raises(KeyError):
             storage.get_all_trials(non_existent_study_id)
+
+
+@pytest.mark.parametrize("storage_mode", STORAGE_MODES)
+@pytest.mark.parametrize("param_names", [["a", "b"], ["b", "a"]])
+def test_get_all_trials_params_order(storage_mode: str, param_names: list[str]) -> None:
+    # We don't actually require that all storages to preserve the order of parameters,
+    # but all current implementations except for GrpcStorageProxy do, so we test this property.
+    if storage_mode == "grpc":
+        pytest.skip("GrpcStorageProxy does not preserve the order of parameters.")
+
+    with StorageSupplier(storage_mode) as storage:
+        study_id = storage.create_new_study(directions=[StudyDirection.MINIMIZE])
+        trial_id = storage.create_new_trial(
+            study_id, optuna.trial.create_trial(state=TrialState.RUNNING)
+        )
+        for param_name in param_names:
+            storage.set_trial_param(
+                trial_id, param_name, 1.0, distribution=FloatDistribution(0.0, 2.0)
+            )
+
+        trials = storage.get_all_trials(study_id)
+        assert list(trials[0].params.keys()) == param_names
 
 
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
@@ -826,6 +846,35 @@ def test_get_all_trials_state_option(storage_mode: str) -> None:
 
 
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
+def test_get_all_trials_not_modified(storage_mode: str) -> None:
+    with StorageSupplier(storage_mode) as storage:
+        _, study_to_trials = _setup_studies(storage, n_study=2, n_trial=20, seed=48)
+
+        for study_id in study_to_trials.keys():
+            trials = storage.get_all_trials(study_id, deepcopy=False)
+            deepcopied_trials = copy.deepcopy(trials)
+
+            for trial in trials:
+                if not trial.state.is_finished():
+                    storage.set_trial_param(trial._trial_id, "paramX", 0, FloatDistribution(0, 1))
+                    storage.set_trial_user_attr(trial._trial_id, "usr_attrX", 0)
+                    storage.set_trial_system_attr(trial._trial_id, "sys_attrX", 0)
+
+                if trial.state == TrialState.RUNNING:
+                    if trial.number % 3 == 0:
+                        storage.set_trial_state_values(trial._trial_id, TrialState.COMPLETE, [0])
+                    elif trial.number % 3 == 1:
+                        storage.set_trial_intermediate_value(trial._trial_id, 0, 0)
+                        storage.set_trial_state_values(trial._trial_id, TrialState.PRUNED, [0])
+                    else:
+                        storage.set_trial_state_values(trial._trial_id, TrialState.FAIL)
+                elif trial.state == TrialState.WAITING:
+                    storage.set_trial_state_values(trial._trial_id, TrialState.RUNNING)
+
+            assert trials == deepcopied_trials
+
+
+@pytest.mark.parametrize("storage_mode", STORAGE_MODES)
 def test_get_n_trials(storage_mode: str) -> None:
     with StorageSupplier(storage_mode) as storage:
         study_id_to_frozen_studies, _ = _setup_studies(storage, n_study=2, n_trial=7, seed=50)
@@ -865,9 +914,21 @@ def test_get_n_trials_state_option(storage_mode: str) -> None:
 
 
 @pytest.mark.parametrize("storage_mode", STORAGE_MODES)
-def test_get_best_trial(storage_mode: str) -> None:
+@pytest.mark.parametrize("direction", [StudyDirection.MAXIMIZE, StudyDirection.MINIMIZE])
+@pytest.mark.parametrize(
+    "values",
+    [
+        [0.0, 1.0, 2.0],
+        [0.0, float("inf"), 1.0],
+        [0.0, float("-inf"), 1.0],
+        [float("inf"), 0.0, 1.0, float("-inf")],
+        [float("inf")],
+        [float("-inf")],
+    ],
+)
+def test_get_best_trial(storage_mode: str, direction: StudyDirection, values: list[float]) -> None:
     with StorageSupplier(storage_mode) as storage:
-        study_id = storage.create_new_study(directions=[StudyDirection.MAXIMIZE])
+        study_id = storage.create_new_study(directions=[direction])
         with pytest.raises(ValueError):
             storage.get_best_trial(study_id)
 
@@ -875,15 +936,46 @@ def test_get_best_trial(storage_mode: str) -> None:
             storage.get_best_trial(study_id + 1)
 
         generator = random.Random(51)
-        for i in range(3):
+
+        for v in values:
             template_trial = _generate_trial(generator)
             template_trial.state = TrialState.COMPLETE
-            template_trial.value = float(i)
+            template_trial.value = v
             storage.create_new_trial(study_id, template_trial=template_trial)
-        assert storage.get_best_trial(study_id).number == i
+        expected_value = max(values) if direction == StudyDirection.MAXIMIZE else min(values)
+        assert storage.get_best_trial(study_id).value == expected_value
 
 
-def test_get_trials_excluded_trial_ids() -> None:
+def test_get_trials_included_trial_ids() -> None:
+    storage_mode = "sqlite"
+
+    with StorageSupplier(storage_mode) as storage:
+        assert isinstance(storage, RDBStorage)
+        study_id = storage.create_new_study(directions=[StudyDirection.MINIMIZE])
+
+        trial_id = storage.create_new_trial(study_id)
+        trial_id_greater_than = trial_id + 500000
+
+        trials = storage._get_trials(
+            study_id,
+            states=None,
+            included_trial_ids=set(),
+            trial_id_greater_than=trial_id_greater_than,
+        )
+        assert len(trials) == 0
+
+        # A large exclusion list used to raise errors. Check that it is not an issue.
+        # See https://github.com/optuna/optuna/issues/1457.
+        trials = storage._get_trials(
+            study_id,
+            states=None,
+            included_trial_ids=set(range(500000)),
+            trial_id_greater_than=trial_id_greater_than,
+        )
+        assert len(trials) == 1
+
+
+def test_get_trials_trial_id_greater_than() -> None:
     storage_mode = "sqlite"
 
     with StorageSupplier(storage_mode) as storage:
@@ -892,12 +984,14 @@ def test_get_trials_excluded_trial_ids() -> None:
 
         storage.create_new_trial(study_id)
 
-        trials = storage._get_trials(study_id, states=None, excluded_trial_ids=set())
+        trials = storage._get_trials(
+            study_id, states=None, included_trial_ids=set(), trial_id_greater_than=-1
+        )
         assert len(trials) == 1
 
-        # A large exclusion list used to raise errors. Check that it is not an issue.
-        # See https://github.com/optuna/optuna/issues/1457.
-        trials = storage._get_trials(study_id, states=None, excluded_trial_ids=set(range(500000)))
+        trials = storage._get_trials(
+            study_id, states=None, included_trial_ids=set(), trial_id_greater_than=500001
+        )
         assert len(trials) == 0
 
 
@@ -906,11 +1000,11 @@ def _setup_studies(
     n_study: int,
     n_trial: int,
     seed: int,
-    direction: Optional[StudyDirection] = None,
-) -> Tuple[Dict[int, FrozenStudy], Dict[int, Dict[int, FrozenTrial]]]:
+    direction: StudyDirection | None = None,
+) -> tuple[dict[int, FrozenStudy], dict[int, dict[int, FrozenTrial]]]:
     generator = random.Random(seed)
-    study_id_to_frozen_study: Dict[int, FrozenStudy] = {}
-    study_id_to_trials: Dict[int, Dict[int, FrozenTrial]] = {}
+    study_id_to_frozen_study: dict[int, FrozenStudy] = {}
+    study_id_to_trials: dict[int, dict[int, FrozenTrial]] = {}
     for i in range(n_study):
         study_name = "test-study-name-{}".format(i)
         if direction is None:
@@ -956,7 +1050,7 @@ def _generate_trial(generator: random.Random) -> FrozenTrial:
     params = {}
     distributions = {}
     user_attrs = {}
-    system_attrs = {}
+    system_attrs: dict[str, Any] = {}
     intermediate_values = {}
     for key, (value, dist) in example_params.items():
         if generator.choice([True, False]):

@@ -1,16 +1,21 @@
+from __future__ import annotations
+
+from collections.abc import Sequence
 import copy
 import math
-from typing import Optional
-from typing import Sequence
-from typing import Union
+from typing import TYPE_CHECKING
 import warnings
 
 import optuna
 from optuna import logging
 from optuna import pruners
-from optuna import trial as trial_module
 from optuna.trial import FrozenTrial
 from optuna.trial import TrialState
+
+
+if TYPE_CHECKING:
+    from optuna import Study
+    from optuna import Trial
 
 
 # This is used for propagating warning message to Study.optimize.
@@ -20,8 +25,8 @@ STUDY_TELL_WARNING_KEY = "STUDY_TELL_WARNING"
 _logger = logging.get_logger(__name__)
 
 
-def _get_frozen_trial(study: "optuna.Study", trial: Union[trial_module.Trial, int]) -> FrozenTrial:
-    if isinstance(trial, trial_module.Trial):
+def _get_frozen_trial(study: Study, trial: Trial | int) -> FrozenTrial:
+    if isinstance(trial, optuna.Trial):
         trial_id = trial._trial_id
     elif isinstance(trial, int):
         trial_number = trial
@@ -41,7 +46,7 @@ def _get_frozen_trial(study: "optuna.Study", trial: Union[trial_module.Trial, in
 
 
 def _check_state_and_values(
-    state: Optional[TrialState], values: Optional[Union[float, Sequence[float]]]
+    state: TrialState | None, values: float | Sequence[float] | None
 ) -> None:
     if state == TrialState.COMPLETE:
         if values is None:
@@ -58,32 +63,32 @@ def _check_state_and_values(
         raise ValueError(f"Cannot tell with state {state}.")
 
 
-def _check_values_are_feasible(study: "optuna.Study", values: Sequence[float]) -> Optional[str]:
+def _check_values_are_feasible(study: Study, values: Sequence[float]) -> str | None:
     for v in values:
         # TODO(Imamura): Construct error message taking into account all values and do not early
         # return `value` is assumed to be ignored on failure so we can set it to any value.
         try:
             float(v)
         except (ValueError, TypeError):
-            return f"The value {repr(v)} could not be cast to float."
+            return f"The value {repr(v)} could not be cast to float"
 
         if math.isnan(v):
-            return f"The value {v} is not acceptable."
+            return f"The value {v} is not acceptable"
 
     if len(study.directions) != len(values):
         return (
             f"The number of the values {len(values)} did not match the number of the objectives "
-            f"{len(study.directions)}."
+            f"{len(study.directions)}"
         )
 
     return None
 
 
 def _tell_with_warning(
-    study: "optuna.Study",
-    trial: Union[trial_module.Trial, int],
-    value_or_values: Optional[Union[float, Sequence[float]]] = None,
-    state: Optional[TrialState] = None,
+    study: Study,
+    trial: Trial | int,
+    value_or_values: float | Sequence[float] | None = None,
+    state: TrialState | None = None,
     skip_if_finished: bool = False,
     suppress_warning: bool = False,
 ) -> FrozenTrial:
@@ -99,6 +104,9 @@ def _tell_with_warning(
             Study.optimize.
     """
 
+    # We must invalidate all trials cache here as it is only valid within a trial.
+    study._thread_local.cached_all_trials = None
+
     # Validate the trial argument.
     frozen_trial = _get_frozen_trial(study, trial)
     if frozen_trial.state.is_finished() and skip_if_finished:
@@ -112,7 +120,7 @@ def _tell_with_warning(
         raise ValueError(f"Cannot tell a {frozen_trial.state.name} trial.")
 
     # Validate the state and values arguments.
-    values: Optional[Sequence[float]]
+    values: Sequence[float] | None
     if value_or_values is None:
         values = None
     elif isinstance(value_or_values, Sequence):
@@ -161,7 +169,7 @@ def _tell_with_warning(
 
     # Cast values to list of floats.
     if values is not None:
-        # values have beed checked to be castable to floats in _check_values_are_feasible.
+        # values have been checked to be castable to floats in _check_values_are_feasible.
         values = [float(value) for value in values]
 
     # Post-processing and storing the trial.

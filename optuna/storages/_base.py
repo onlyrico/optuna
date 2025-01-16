@@ -1,14 +1,12 @@
+from __future__ import annotations
+
 import abc
+from collections.abc import Container
+from collections.abc import Sequence
 from typing import Any
 from typing import cast
-from typing import Container
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Sequence
-from typing import Tuple
-from typing import Union
 
+from optuna._typing import JSONSerializable
 from optuna.distributions import BaseDistribution
 from optuna.study._frozen import FrozenStudy
 from optuna.study._study_direction import StudyDirection
@@ -51,7 +49,7 @@ class BaseStorage(abc.ABC):
 
     @abc.abstractmethod
     def create_new_study(
-        self, directions: Sequence[StudyDirection], study_name: Optional[str] = None
+        self, directions: Sequence[StudyDirection], study_name: str | None = None
     ) -> int:
         """Create a new study from a name.
 
@@ -73,7 +71,6 @@ class BaseStorage(abc.ABC):
             :exc:`optuna.exceptions.DuplicatedStudyError`:
                 If a study with the same ``study_name`` already exists.
         """
-        # TODO(ytsmiling) Fix RDB storage implementation to ensure unique `study_id`.
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -111,7 +108,7 @@ class BaseStorage(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def set_study_system_attr(self, study_id: int, key: str, value: Any) -> None:
+    def set_study_system_attr(self, study_id: int, key: str, value: JSONSerializable) -> None:
         """Register an optuna-internal attribute to a study.
 
         This method overwrites any existing attribute.
@@ -167,7 +164,7 @@ class BaseStorage(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_study_directions(self, study_id: int) -> List[StudyDirection]:
+    def get_study_directions(self, study_id: int) -> list[StudyDirection]:
         """Read whether a study maximizes or minimizes an objective.
 
         Args:
@@ -184,7 +181,7 @@ class BaseStorage(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_study_user_attrs(self, study_id: int) -> Dict[str, Any]:
+    def get_study_user_attrs(self, study_id: int) -> dict[str, Any]:
         """Read the user-defined attributes of a study.
 
         Args:
@@ -201,7 +198,7 @@ class BaseStorage(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_study_system_attrs(self, study_id: int) -> Dict[str, Any]:
+    def get_study_system_attrs(self, study_id: int) -> dict[str, Any]:
         """Read the optuna-internal attributes of a study.
 
         Args:
@@ -218,11 +215,11 @@ class BaseStorage(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_all_studies(self) -> List[FrozenStudy]:
+    def get_all_studies(self) -> list[FrozenStudy]:
         """Read a list of :class:`~optuna.study.FrozenStudy` objects.
 
         Returns:
-            A list of :class:`~optuna.study.FrozenStudy` objects.
+            A list of :class:`~optuna.study.FrozenStudy` objects, sorted by ``study_id``.
 
         """
         raise NotImplementedError
@@ -230,7 +227,7 @@ class BaseStorage(abc.ABC):
     # Basic trial manipulation
 
     @abc.abstractmethod
-    def create_new_trial(self, study_id: int, template_trial: Optional[FrozenTrial] = None) -> int:
+    def create_new_trial(self, study_id: int, template_trial: FrozenTrial | None = None) -> int:
         """Create and add a new trial to a study.
 
         The returned trial ID is unique among all current and deleted trials.
@@ -346,7 +343,7 @@ class BaseStorage(abc.ABC):
 
     @abc.abstractmethod
     def set_trial_state_values(
-        self, trial_id: int, state: TrialState, values: Optional[Sequence[float]] = None
+        self, trial_id: int, state: TrialState, values: Sequence[float] | None = None
     ) -> bool:
         """Update the state and values of a trial.
 
@@ -423,7 +420,7 @@ class BaseStorage(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def set_trial_system_attr(self, trial_id: int, key: str, value: Any) -> None:
+    def set_trial_system_attr(self, trial_id: int, key: str, value: JSONSerializable) -> None:
         """Set an optuna-internal attribute to a trial.
 
         This method overwrites any existing attribute.
@@ -468,8 +465,8 @@ class BaseStorage(abc.ABC):
         self,
         study_id: int,
         deepcopy: bool = True,
-        states: Optional[Container[TrialState]] = None,
-    ) -> List[FrozenTrial]:
+        states: Container[TrialState] | None = None,
+    ) -> list[FrozenTrial]:
         """Read all trials in a study.
 
         Args:
@@ -482,7 +479,7 @@ class BaseStorage(abc.ABC):
                 Trial states to filter on. If :obj:`None`, include all states.
 
         Returns:
-            List of trials in the study.
+            List of trials in the study, sorted by ``trial_id``.
 
         Raises:
             :exc:`KeyError`:
@@ -491,7 +488,7 @@ class BaseStorage(abc.ABC):
         raise NotImplementedError
 
     def get_n_trials(
-        self, study_id: int, state: Optional[Union[Tuple[TrialState, ...], TrialState]] = None
+        self, study_id: int, state: tuple[TrialState, ...] | TrialState | None = None
     ) -> int:
         """Count the number of trials in a study.
 
@@ -553,7 +550,7 @@ class BaseStorage(abc.ABC):
 
         return best_trial
 
-    def get_trial_params(self, trial_id: int) -> Dict[str, Any]:
+    def get_trial_params(self, trial_id: int) -> dict[str, Any]:
         """Read the parameter dictionary of a trial.
 
         Args:
@@ -561,7 +558,7 @@ class BaseStorage(abc.ABC):
                 ID of the trial.
 
         Returns:
-            Dictionary of a parameters. Keys are parameter names and values are internal
+            Dictionary of a parameters. Keys are parameter names and values are external
             representations of the parameter values.
 
         Raises:
@@ -570,7 +567,7 @@ class BaseStorage(abc.ABC):
         """
         return self.get_trial(trial_id).params
 
-    def get_trial_user_attrs(self, trial_id: int) -> Dict[str, Any]:
+    def get_trial_user_attrs(self, trial_id: int) -> dict[str, Any]:
         """Read the user-defined attributes of a trial.
 
         Args:
@@ -586,7 +583,7 @@ class BaseStorage(abc.ABC):
         """
         return self.get_trial(trial_id).user_attrs
 
-    def get_trial_system_attrs(self, trial_id: int) -> Dict[str, Any]:
+    def get_trial_system_attrs(self, trial_id: int) -> dict[str, Any]:
         """Read the optuna-internal attributes of a trial.
 
         Args:

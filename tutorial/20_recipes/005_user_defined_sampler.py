@@ -8,7 +8,7 @@ Thanks to user-defined samplers, you can:
 
 - experiment your own sampling algorithms,
 - implement task-specific algorithms to refine the optimization performance, or
-- wrap other optimization libraries to integrate them into Optuna pipelines (e.g., :class:`~optuna.integration.SkoptSampler`).
+- wrap other optimization libraries to integrate them into Optuna pipelines (e.g., `BoTorchSampler <https://optuna-integration.readthedocs.io/en/stable/reference/generated/optuna_integration.BoTorchSampler.html>`__).
 
 This section describes the internal behavior of sampler classes and shows an example of implementing a user-defined sampler.
 
@@ -37,7 +37,7 @@ An Example: Implementing SimulatedAnnealingSampler
 --------------------------------------------------
 
 For example, the following code defines a sampler based on
-`Simulated Annealing (SA) <https://en.wikipedia.org/wiki/Simulated_annealing>`_:
+`Simulated Annealing (SA) <https://en.wikipedia.org/wiki/Simulated_annealing>`__:
 """
 
 import numpy as np
@@ -95,7 +95,7 @@ class SimulatedAnnealingSampler(optuna.samplers.BaseSampler):
 
     # The rest are unrelated to SA algorithm: boilerplate
     def infer_relative_search_space(self, study, trial):
-        return optuna.samplers.intersection_search_space(study)
+        return optuna.search_space.intersection_search_space(study.get_trials(deepcopy=False))
 
     def sample_independent(self, study, trial, param_name, param_distribution):
         independent_sampler = optuna.samplers.RandomSampler()
@@ -107,7 +107,7 @@ class SimulatedAnnealingSampler(optuna.samplers.BaseSampler):
 #    In favor of code simplicity, the above implementation doesn't support some features (e.g., maximization).
 #    If you're interested in how to support those features, please see
 #    `examples/samplers/simulated_annealing.py
-#    <https://github.com/optuna/optuna-examples/blob/main/samplers/simulated_annealing_sampler.py>`_.
+#    <https://github.com/optuna/optuna-examples/blob/main/samplers/simulated_annealing_sampler.py>`__.
 #
 #
 # You can use ``SimulatedAnnealingSampler`` in the same way as built-in samplers as follows:
@@ -135,6 +135,6 @@ print("Parameters that achieve the best value: ", best_trial.params)
 # .. note::
 #     Strictly speaking, in the first trial,
 #     ``SimulatedAnnealingSampler.sample_independent`` method is used to sample parameter values.
-#     Because :func:`~optuna.samplers.intersection_search_space` used in
+#     Because :func:`~optuna.search_space.intersection_search_space` used in
 #     ``SimulatedAnnealingSampler.infer_relative_search_space`` cannot infer the search space
 #     if there are no complete trials.
