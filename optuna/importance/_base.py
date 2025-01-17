@@ -1,18 +1,15 @@
-import abc
-from collections import OrderedDict
-from typing import Callable
-from typing import cast
-from typing import Collection
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Union
+from __future__ import annotations
 
-import numpy
+import abc
+from collections.abc import Callable
+from collections.abc import Collection
+from typing import cast
+
+import numpy as np
 
 from optuna._transform import _SearchSpaceTransform
 from optuna.distributions import BaseDistribution
-from optuna.samplers import intersection_search_space
+from optuna.search_space import intersection_search_space
 from optuna.study import Study
 from optuna.trial import FrozenTrial
 from optuna.trial import TrialState
@@ -25,10 +22,10 @@ class BaseImportanceEvaluator(abc.ABC):
     def evaluate(
         self,
         study: Study,
-        params: Optional[List[str]] = None,
+        params: list[str] | None = None,
         *,
-        target: Optional[Callable[[FrozenTrial], float]] = None,
-    ) -> Dict[str, float]:
+        target: Callable[[FrozenTrial], float] | None = None,
+    ) -> dict[str, float]:
         """Evaluate parameter importances based on completed trials in the given study.
 
         .. note::
@@ -59,20 +56,20 @@ class BaseImportanceEvaluator(abc.ABC):
                     objective, use ``target=lambda t: t.values[0]`` for the target parameter.
 
         Returns:
-            An :class:`collections.OrderedDict` where the keys are parameter names and the values
-            are assessed importances.
+            A :obj:`dict` where the keys are parameter names and the values are assessed
+            importances.
 
         """
         # TODO(hvy): Reconsider the interface as logic might violate DRY among multiple evaluators.
         raise NotImplementedError
 
 
-def _get_distributions(study: Study, params: Optional[List[str]]) -> Dict[str, BaseDistribution]:
+def _get_distributions(study: Study, params: list[str] | None) -> dict[str, BaseDistribution]:
     completed_trials = study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,))
     _check_evaluate_args(completed_trials, params)
 
     if params is None:
-        return intersection_search_space(study, ordered_dict=True)
+        return intersection_search_space(study.get_trials(deepcopy=False))
 
     # New temporary required to pass mypy. Seems like a bug.
     params_not_none = params
@@ -104,13 +101,13 @@ def _get_distributions(study: Study, params: Optional[List[str]]) -> Dict[str, B
             )
 
     assert distributions is not None  # Required to pass mypy.
-    distributions = OrderedDict(
+    distributions = dict(
         sorted(distributions.items(), key=lambda name_and_distribution: name_and_distribution[0])
     )
     return distributions
 
 
-def _check_evaluate_args(completed_trials: List[FrozenTrial], params: Optional[List[str]]) -> None:
+def _check_evaluate_args(completed_trials: list[FrozenTrial], params: list[str] | None) -> None:
     if len(completed_trials) == 0:
         raise ValueError("Cannot evaluate parameter importances without completed trials.")
     if len(completed_trials) == 1:
@@ -141,38 +138,38 @@ def _check_evaluate_args(completed_trials: List[FrozenTrial], params: Optional[L
 
 
 def _get_filtered_trials(
-    study: Study, params: Collection[str], target: Optional[Callable[[FrozenTrial], float]]
-) -> List[FrozenTrial]:
+    study: Study, params: Collection[str], target: Callable[[FrozenTrial], float] | None
+) -> list[FrozenTrial]:
     trials = study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,))
     return [
         trial
         for trial in trials
         if set(params) <= set(trial.params)
-        and numpy.isfinite(target(trial) if target is not None else cast(float, trial.value))
+        and np.isfinite(target(trial) if target is not None else cast(float, trial.value))
     ]
 
 
 def _param_importances_to_dict(
-    params: Collection[str], param_importances: Union[numpy.ndarray, float]
-) -> Dict[str, float]:
+    params: Collection[str], param_importances: np.ndarray | float
+) -> dict[str, float]:
     return {
         name: value
-        for name, value in zip(params, numpy.broadcast_to(param_importances, (len(params),)))
+        for name, value in zip(params, np.broadcast_to(param_importances, (len(params),)))
     }
 
 
-def _get_trans_params(trials: List[FrozenTrial], trans: _SearchSpaceTransform) -> numpy.ndarray:
-    return numpy.array([trans.transform(trial.params) for trial in trials])
+def _get_trans_params(trials: list[FrozenTrial], trans: _SearchSpaceTransform) -> np.ndarray:
+    return np.array([trans.transform(trial.params) for trial in trials])
 
 
 def _get_target_values(
-    trials: List[FrozenTrial], target: Optional[Callable[[FrozenTrial], float]]
-) -> numpy.ndarray:
-    return numpy.array([target(trial) if target is not None else trial.value for trial in trials])
+    trials: list[FrozenTrial], target: Callable[[FrozenTrial], float] | None
+) -> np.ndarray:
+    return np.array([target(trial) if target is not None else trial.value for trial in trials])
 
 
-def _sort_dict_by_importance(param_importances: Dict[str, float]) -> Dict[str, float]:
-    return OrderedDict(
+def _sort_dict_by_importance(param_importances: dict[str, float]) -> dict[str, float]:
+    return dict(
         reversed(
             sorted(
                 param_importances.items(), key=lambda name_and_importance: name_and_importance[1]

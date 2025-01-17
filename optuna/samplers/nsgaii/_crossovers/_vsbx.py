@@ -1,15 +1,21 @@
-from typing import Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from optuna._experimental import experimental_class
 from optuna.samplers.nsgaii._crossovers._base import BaseCrossover
-from optuna.study import Study
+
+
+if TYPE_CHECKING:
+    from optuna.study import Study
 
 
 @experimental_class("3.0.0")
 class VSBXCrossover(BaseCrossover):
-    """Modified Simulated Binary Crossover operation used by :class:`~optuna.samplers.NSGAIISampler`.
+    """Modified Simulated Binary Crossover operation used by
+    :class:`~optuna.samplers.NSGAIISampler`.
 
     vSBX generates child individuals without excluding any region of the parameter space,
     while maintaining the excellent properties of SBX.
@@ -17,7 +23,7 @@ class VSBXCrossover(BaseCrossover):
     - `Pedro J. Ballester, Jonathan N. Carter.
       Real-Parameter Genetic Algorithms for Finding Multiple Optimal Solutions
       in Multi-modal Optimization. GECCO 2003: 706-717
-      <https://link.springer.com/chapter/10.1007/3-540-45105-6_86>`_
+      <https://doi.org/10.1007/3-540-45105-6_86>`__
 
     Args:
         eta:
@@ -28,7 +34,7 @@ class VSBXCrossover(BaseCrossover):
 
     n_parents = 2
 
-    def __init__(self, eta: Optional[float] = None) -> None:
+    def __init__(self, eta: float | None = None) -> None:
         self._eta = eta
 
     def crossover(
@@ -38,7 +44,7 @@ class VSBXCrossover(BaseCrossover):
         study: Study,
         search_space_bounds: np.ndarray,
     ) -> np.ndarray:
-        # https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.422.952&rep=rep1&type=pdf
+        # https://doi.org/10.1007/3-540-45105-6_86
         # Section 3.2 Crossover Schemes (vSBX)
         if self._eta is None:
             eta = 20.0 if study._is_multi_objective() else 2.0

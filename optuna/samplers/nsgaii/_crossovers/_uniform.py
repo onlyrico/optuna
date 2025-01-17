@@ -1,7 +1,14 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 
 from optuna.samplers.nsgaii._crossovers._base import BaseCrossover
-from optuna.study import Study
+
+
+if TYPE_CHECKING:
+    from optuna.study import Study
 
 
 class UniformCrossover(BaseCrossover):
@@ -13,7 +20,7 @@ class UniformCrossover(BaseCrossover):
     - `Gilbert Syswerda. 1989. Uniform Crossover in Genetic Algorithms.
       In Proceedings of the 3rd International Conference on Genetic Algorithms.
       Morgan Kaufmann Publishers Inc., San Francisco, CA, USA, 2-9.
-      <https://www.researchgate.net/publication/201976488_Uniform_Crossover_in_Genetic_Algorithms>`_
+      <https://www.researchgate.net/publication/201976488_Uniform_Crossover_in_Genetic_Algorithms>`__
 
     Args:
         swapping_prob:
@@ -23,6 +30,8 @@ class UniformCrossover(BaseCrossover):
     n_parents = 2
 
     def __init__(self, swapping_prob: float = 0.5) -> None:
+        if not (0.0 <= swapping_prob <= 1.0):
+            raise ValueError("`swapping_prob` must be a float value within the range [0.0, 1.0].")
         self._swapping_prob = swapping_prob
 
     def crossover(

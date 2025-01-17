@@ -1,7 +1,8 @@
+from __future__ import annotations
+
 import datetime
+import time
 from typing import Any
-from typing import Dict
-from typing import Optional
 
 import pytest
 
@@ -22,8 +23,8 @@ parametrize_trial_type = pytest.mark.parametrize("trial_type", [FixedTrial, Froz
 
 def _create_trial(
     trial_type: type,
-    params: Optional[Dict[str, Any]] = None,
-    distributions: Optional[Dict[str, BaseDistribution]] = None,
+    params: dict[str, Any] | None = None,
+    distributions: dict[str, BaseDistribution] | None = None,
 ) -> BaseTrial:
     if params is None:
         params = {"x": 10}
@@ -215,4 +216,5 @@ def test_datetime_start(trial_type: type) -> None:
     trial = _create_trial(trial_type)
     assert trial.datetime_start is not None
     old_date_time_start = trial.datetime_start
+    time.sleep(0.001)  # Sleep 1ms to avoid faulty assertion on Windows OS.
     assert datetime.datetime.now() != old_date_time_start

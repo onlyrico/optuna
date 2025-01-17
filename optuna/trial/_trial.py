@@ -1,16 +1,18 @@
+from __future__ import annotations
+
+from collections import UserDict
+from collections.abc import Sequence
 import copy
 import datetime
 from typing import Any
-from typing import Dict
-from typing import Optional
 from typing import overload
-from typing import Sequence
 import warnings
 
 import optuna
 from optuna import distributions
 from optuna import logging
 from optuna import pruners
+from optuna._convert_positional_args import convert_positional_args
 from optuna._deprecated import deprecated_func
 from optuna.distributions import BaseDistribution
 from optuna.distributions import CategoricalChoiceType
@@ -18,11 +20,12 @@ from optuna.distributions import CategoricalDistribution
 from optuna.distributions import FloatDistribution
 from optuna.distributions import IntDistribution
 from optuna.trial import FrozenTrial
+from optuna.trial._base import _SUGGEST_INT_POSITIONAL_ARGS
 from optuna.trial._base import BaseTrial
 
 
 _logger = logging.get_logger(__name__)
-_suggest_deprecated_msg = "Use :func:`~optuna.trial.Trial.suggest_float` instead."
+_suggest_deprecated_msg = "Use suggest_float{args} instead."
 
 
 class Trial(BaseTrial):
@@ -48,22 +51,27 @@ class Trial(BaseTrial):
         self.study = study
         self._trial_id = trial_id
 
-        # TODO(Yanase): Remove _study_id attribute, and use study._study_id instead.
-        self._study_id = self.study._study_id
         self.storage = self.study._storage
 
-        self._init_relative_params()
-
-    def _init_relative_params(self) -> None:
         self._cached_frozen_trial = self.storage.get_trial(self._trial_id)
         study = pruners._filter_study(self.study, self._cached_frozen_trial)
+
+        self.study.sampler.before_trial(study, self._cached_frozen_trial)
 
         self.relative_search_space = self.study.sampler.infer_relative_search_space(
             study, self._cached_frozen_trial
         )
-        self.relative_params = self.study.sampler.sample_relative(
-            study, self._cached_frozen_trial, self.relative_search_space
-        )
+        self._relative_params: dict[str, Any] | None = None
+        self._fixed_params = self._cached_frozen_trial.system_attrs.get("fixed_params", {})
+
+    @property
+    def relative_params(self) -> dict[str, Any]:
+        if self._relative_params is None:
+            study = pruners._filter_study(self.study, self._cached_frozen_trial)
+            self._relative_params = self.study.sampler.sample_relative(
+                study, self._cached_frozen_trial, self.relative_search_space
+            )
+        return self._relative_params
 
     def suggest_float(
         self,
@@ -71,12 +79,10 @@ class Trial(BaseTrial):
         low: float,
         high: float,
         *,
-        step: Optional[float] = None,
+        step: float | None = None,
         log: bool = False,
     ) -> float:
         """Suggest a value for the floating point parameter.
-
-        .. versionadded:: 1.3.0
 
         Example:
 
@@ -156,7 +162,7 @@ class Trial(BaseTrial):
         self._check_distribution(name, distribution)
         return suggested_value
 
-    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg)
+    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg.format(args=""))
     def suggest_uniform(self, name: str, low: float, high: float) -> float:
         """Suggest a value for the continuous parameter.
 
@@ -178,7 +184,7 @@ class Trial(BaseTrial):
 
         return self.suggest_float(name, low, high)
 
-    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg)
+    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg.format(args="(..., log=True)"))
     def suggest_loguniform(self, name: str, low: float, high: float) -> float:
         """Suggest a value for the continuous parameter.
 
@@ -200,7 +206,7 @@ class Trial(BaseTrial):
 
         return self.suggest_float(name, low, high, log=True)
 
-    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg)
+    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg.format(args="(..., step=...)"))
     def suggest_discrete_uniform(self, name: str, low: float, high: float, q: float) -> float:
         """Suggest a value for the discrete parameter.
 
@@ -229,7 +235,10 @@ class Trial(BaseTrial):
 
         return self.suggest_float(name, low, high, step=q)
 
-    def suggest_int(self, name: str, low: int, high: int, step: int = 1, log: bool = False) -> int:
+    @convert_positional_args(previous_positional_arg_names=_SUGGEST_INT_POSITIONAL_ARGS)
+    def suggest_int(
+        self, name: str, low: int, high: int, *, step: int = 1, log: bool = False
+    ) -> int:
         """Suggest a value for the integer parameter.
 
         The value is sampled from the integers in :math:`[\\mathsf{low}, \\mathsf{high}]`.
@@ -237,7 +246,7 @@ class Trial(BaseTrial):
         Example:
 
             Suggest the number of trees in `RandomForestClassifier <https://scikit-learn.org/
-            stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html>`_.
+            stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html>`__.
 
             .. testcode::
 
@@ -317,30 +326,24 @@ class Trial(BaseTrial):
         return suggested_value
 
     @overload
-    def suggest_categorical(self, name: str, choices: Sequence[None]) -> None:
-        ...
+    def suggest_categorical(self, name: str, choices: Sequence[None]) -> None: ...
 
     @overload
-    def suggest_categorical(self, name: str, choices: Sequence[bool]) -> bool:
-        ...
+    def suggest_categorical(self, name: str, choices: Sequence[bool]) -> bool: ...
 
     @overload
-    def suggest_categorical(self, name: str, choices: Sequence[int]) -> int:
-        ...
+    def suggest_categorical(self, name: str, choices: Sequence[int]) -> int: ...
 
     @overload
-    def suggest_categorical(self, name: str, choices: Sequence[float]) -> float:
-        ...
+    def suggest_categorical(self, name: str, choices: Sequence[float]) -> float: ...
 
     @overload
-    def suggest_categorical(self, name: str, choices: Sequence[str]) -> str:
-        ...
+    def suggest_categorical(self, name: str, choices: Sequence[str]) -> str: ...
 
     @overload
     def suggest_categorical(
         self, name: str, choices: Sequence[CategoricalChoiceType]
-    ) -> CategoricalChoiceType:
-        ...
+    ) -> CategoricalChoiceType: ...
 
     def suggest_categorical(
         self, name: str, choices: Sequence[CategoricalChoiceType]
@@ -352,7 +355,7 @@ class Trial(BaseTrial):
         Example:
 
             Suggest a kernel function of `SVC <https://scikit-learn.org/stable/modules/generated/
-            sklearn.svm.SVC.html>`_.
+            sklearn.svm.SVC.html>`__.
 
             .. testcode::
 
@@ -424,7 +427,7 @@ class Trial(BaseTrial):
         Example:
 
             Report intermediate scores of `SGDClassifier <https://scikit-learn.org/stable/modules/
-            generated/sklearn.linear_model.SGDClassifier.html>`_ training.
+            generated/sklearn.linear_model.SGDClassifier.html>`__ training.
 
             .. testcode::
 
@@ -475,20 +478,24 @@ class Trial(BaseTrial):
             # For convenience, we allow users to report a value that can be cast to `float`.
             value = float(value)
         except (TypeError, ValueError):
-            message = "The `value` argument is of type '{}' but supposed to be a float.".format(
-                type(value).__name__
+            message = (
+                f"The `value` argument is of type '{type(value)}' but supposed to be a float."
             )
             raise TypeError(message) from None
 
+        try:
+            step = int(step)
+        except (TypeError, ValueError):
+            message = f"The `step` argument is of type '{type(step)}' but supposed to be an int."
+            raise TypeError(message) from None
+
         if step < 0:
-            raise ValueError("The `step` argument is {} but cannot be negative.".format(step))
+            raise ValueError(f"The `step` argument is {step} but cannot be negative.")
 
         if step in self._cached_frozen_trial.intermediate_values:
             # Do nothing if already reported.
             warnings.warn(
-                "The reported value is ignored because this `step` {} is already reported.".format(
-                    step
-                )
+                f"The reported value is ignored because this `step` {step} is already reported."
             )
             return
 
@@ -524,7 +531,7 @@ class Trial(BaseTrial):
                 "Trial.should_prune is not supported for multi-objective optimization."
             )
 
-        trial = copy.deepcopy(self._get_latest_trial())
+        trial = self._get_latest_trial()
         return self.study.pruner.prune(self.study, trial)
 
     def set_user_attr(self, key: str, value: Any) -> None:
@@ -584,7 +591,7 @@ class Trial(BaseTrial):
         self.storage.set_trial_user_attr(self._trial_id, key, value)
         self._cached_frozen_trial.user_attrs[key] = value
 
-    @deprecated_func("3.1.0", "6.0.0")
+    @deprecated_func("3.1.0", "5.0.0")
     def set_system_attr(self, key: str, value: Any) -> None:
         """Set system attributes to the trial.
 
@@ -614,7 +621,7 @@ class Trial(BaseTrial):
             param_value = trial.params[name]
         else:
             if self._is_fixed_param(name, distribution):
-                param_value = trial.system_attrs["fixed_params"][name]
+                param_value = self._fixed_params[name]
             elif distribution.single():
                 param_value = distributions._get_single_value(distribution)
             elif self._is_relative_param(name, distribution):
@@ -634,14 +641,10 @@ class Trial(BaseTrial):
         return param_value
 
     def _is_fixed_param(self, name: str, distribution: BaseDistribution) -> bool:
-        system_attrs = self._cached_frozen_trial.system_attrs
-        if "fixed_params" not in system_attrs:
+        if name not in self._fixed_params:
             return False
 
-        if name not in system_attrs["fixed_params"]:
-            return False
-
-        param_value = system_attrs["fixed_params"][name]
+        param_value = self._fixed_params[name]
         param_value_in_internal_repr = distribution.to_internal_repr(param_value)
 
         contained = distribution._contains(param_value_in_internal_repr)
@@ -684,13 +687,15 @@ class Trial(BaseTrial):
             )
 
     def _get_latest_trial(self) -> FrozenTrial:
-        # TODO(eukaryo): Remove this method after `system_attrs` property is deprecated.
-        system_attrs = copy.deepcopy(self.storage.get_trial_system_attrs(self._trial_id))
-        self._cached_frozen_trial.system_attrs = system_attrs
-        return self._cached_frozen_trial
+        # TODO(eukaryo): Remove this method after `system_attrs` property is removed.
+        latest_trial = copy.copy(self._cached_frozen_trial)
+        latest_trial.system_attrs = _LazyTrialSystemAttrs(  # type: ignore[assignment]
+            self._trial_id, self.storage
+        )
+        return latest_trial
 
     @property
-    def params(self) -> Dict[str, Any]:
+    def params(self) -> dict[str, Any]:
         """Return parameters to be optimized.
 
         Returns:
@@ -700,7 +705,7 @@ class Trial(BaseTrial):
         return copy.deepcopy(self._cached_frozen_trial.params)
 
     @property
-    def distributions(self) -> Dict[str, BaseDistribution]:
+    def distributions(self) -> dict[str, BaseDistribution]:
         """Return distributions of parameters to be optimized.
 
         Returns:
@@ -710,7 +715,7 @@ class Trial(BaseTrial):
         return copy.deepcopy(self._cached_frozen_trial.distributions)
 
     @property
-    def user_attrs(self) -> Dict[str, Any]:
+    def user_attrs(self) -> dict[str, Any]:
         """Return user attributes.
 
         Returns:
@@ -720,8 +725,8 @@ class Trial(BaseTrial):
         return copy.deepcopy(self._cached_frozen_trial.user_attrs)
 
     @property
-    @deprecated_func("3.1.0", "6.0.0")
-    def system_attrs(self) -> Dict[str, Any]:
+    @deprecated_func("3.1.0", "5.0.0")
+    def system_attrs(self) -> dict[str, Any]:
         """Return system attributes.
 
         Returns:
@@ -731,7 +736,7 @@ class Trial(BaseTrial):
         return copy.deepcopy(self.storage.get_trial_system_attrs(self._trial_id))
 
     @property
-    def datetime_start(self) -> Optional[datetime.datetime]:
+    def datetime_start(self) -> datetime.datetime | None:
         """Return start datetime.
 
         Returns:
@@ -748,3 +753,18 @@ class Trial(BaseTrial):
         """
 
         return self._cached_frozen_trial.number
+
+
+class _LazyTrialSystemAttrs(UserDict):
+    def __init__(self, trial_id: int, storage: optuna.storages.BaseStorage) -> None:
+        super().__init__()
+        self._trial_id = trial_id
+        self._storage = storage
+        self._initialized = False
+
+    def __getattribute__(self, key: str) -> Any:
+        if key == "data":
+            if not self._initialized:
+                self._initialized = True
+                super().update(self._storage.get_trial_system_attrs(self._trial_id))
+        return super().__getattribute__(key)

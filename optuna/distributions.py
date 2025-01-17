@@ -1,12 +1,13 @@
+from __future__ import annotations
+
 import abc
+from collections.abc import Sequence
 import copy
 import decimal
 import json
 from numbers import Real
 from typing import Any
 from typing import cast
-from typing import Dict
-from typing import Sequence
 from typing import Union
 import warnings
 
@@ -84,13 +85,13 @@ class BaseDistribution(abc.ABC):
 
         raise NotImplementedError
 
-    def _asdict(self) -> Dict:
+    def _asdict(self) -> dict:
         return self.__dict__
 
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, BaseDistribution):
             return NotImplemented
-        if not type(self) is type(other):
+        if type(self) is not type(other):
             return False
         return self.__dict__ == other.__dict__
 
@@ -133,7 +134,7 @@ class FloatDistribution(BaseDistribution):
     """
 
     def __init__(
-        self, low: float, high: float, log: bool = False, step: Union[None, float] = None
+        self, low: float, high: float, log: bool = False, step: None | float = None
     ) -> None:
         if log and step is not None:
             raise ValueError("The parameter `step` is not supported when `log` is true.")
@@ -221,7 +222,7 @@ class UniformDistribution(FloatDistribution):
     def __init__(self, low: float, high: float) -> None:
         super().__init__(low=low, high=high, log=False, step=None)
 
-    def _asdict(self) -> Dict:
+    def _asdict(self) -> dict:
         d = copy.deepcopy(self.__dict__)
         d.pop("log")
         d.pop("step")
@@ -248,7 +249,7 @@ class LogUniformDistribution(FloatDistribution):
     def __init__(self, low: float, high: float) -> None:
         super().__init__(low=low, high=high, log=True, step=None)
 
-    def _asdict(self) -> Dict:
+    def _asdict(self) -> dict:
         d = copy.deepcopy(self.__dict__)
         d.pop("log")
         d.pop("step")
@@ -288,7 +289,7 @@ class DiscreteUniformDistribution(FloatDistribution):
     def __init__(self, low: float, high: float, q: float) -> None:
         super().__init__(low=low, high=high, step=q)
 
-    def _asdict(self) -> Dict:
+    def _asdict(self) -> dict:
         d = copy.deepcopy(self.__dict__)
         d.pop("log")
 
@@ -432,7 +433,7 @@ class IntUniformDistribution(IntDistribution):
     def __init__(self, low: int, high: int, step: int = 1) -> None:
         super().__init__(low=low, high=high, log=False, step=step)
 
-    def _asdict(self) -> Dict:
+    def _asdict(self) -> dict:
         d = copy.deepcopy(self.__dict__)
         d.pop("log")
         return d
@@ -455,22 +456,12 @@ class IntLogUniformDistribution(IntDistribution):
         step:
             A discretization step. ``step`` must be a positive integer.
 
-            .. warning::
-                Deprecated in v2.0.0. ``step`` argument will be removed in the future.
-                The removal of this feature is currently scheduled for v4.0.0,
-                but this schedule is subject to change.
-
-                Samplers and other components in Optuna relying on this distribution will ignore
-                this value and assume that ``step`` is always 1.
-                User-defined samplers may continue to use other values besides 1 during the
-                deprecation.
-
     """
 
     def __init__(self, low: int, high: int, step: int = 1) -> None:
         super().__init__(low=low, high=high, log=True, step=step)
 
-    def _asdict(self) -> Dict:
+    def _asdict(self) -> dict:
         d = copy.deepcopy(self.__dict__)
         d.pop("log")
         return d
@@ -529,9 +520,17 @@ class CategoricalDistribution(BaseDistribution):
         return self.choices[int(param_value_in_internal_repr)]
 
     def to_internal_repr(self, param_value_in_external_repr: CategoricalChoiceType) -> float:
-        for index, choice in enumerate(self.choices):
-            if _categorical_choice_equal(param_value_in_external_repr, choice):
-                return index
+        try:
+            # NOTE(nabenabe): With this implementation, we cannot distinguish some values
+            # such as True and 1, or 1.0 and 1. For example, if choices=[True, 1] and external_repr
+            # is 1, this method wrongly returns 0 instead of 1. However, we decided to accept this
+            # bug for such exceptional choices for less complexity and faster processing.
+            return self.choices.index(param_value_in_external_repr)
+        except ValueError:  # ValueError: param_value_in_external_repr is not in choices.
+            # ValueError also happens if external_repr is nan or includes precision error in float.
+            for index, choice in enumerate(self.choices):
+                if _categorical_choice_equal(param_value_in_external_repr, choice):
+                    return index
 
         raise ValueError(f"'{param_value_in_external_repr}' not in {self.choices}.")
 
@@ -706,7 +705,7 @@ def _adjust_int_uniform_high(low: int, high: int, step: int) -> int:
     return high
 
 
-def _get_single_value(distribution: BaseDistribution) -> Union[int, float, CategoricalChoiceType]:
+def _get_single_value(distribution: BaseDistribution) -> int | float | CategoricalChoiceType:
     assert distribution.single()
 
     if isinstance(
@@ -781,3 +780,10 @@ def _convert_old_distribution_to_new_distribution(
         warnings.warn(message, FutureWarning)
 
     return new_distribution
+
+
+def _is_distribution_log(distribution: BaseDistribution) -> bool:
+    if isinstance(distribution, (FloatDistribution, IntDistribution)):
+        return distribution.log
+
+    return False

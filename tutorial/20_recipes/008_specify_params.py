@@ -26,7 +26,7 @@ evaluated them yet and decided to use Optuna to find better sets of hyperparamet
 Optuna has :func:`optuna.study.Study.enqueue_trial` which lets you pass those sets of
 hyperparameters to Optuna and Optuna will evaluate them.
 
-This section walks you through how to use this lit API with `LightGBM <https://lightgbm.readthedocs.io/en/latest/>`_.
+This section walks you through how to use this lit API with `LightGBM <https://lightgbm.readthedocs.io/en/stable/>`__.
 """
 
 import lightgbm as lgb
@@ -56,9 +56,7 @@ def objective(trial):
         "min_child_samples": trial.suggest_int("min_child_samples", 5, 100),
     }
 
-    # Add a callback for pruning.
-    pruning_callback = optuna.integration.LightGBMPruningCallback(trial, "auc")
-    gbm = lgb.train(param, dtrain, valid_sets=[dvalid], callbacks=[pruning_callback])
+    gbm = lgb.train(param, dtrain, valid_sets=[dvalid])
 
     preds = gbm.predict(valid_x)
     pred_labels = np.rint(preds)

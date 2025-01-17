@@ -1,17 +1,21 @@
+from __future__ import annotations
+
 import abc
+from collections.abc import Callable
+from collections.abc import Sequence
 from typing import Any
-from typing import Callable
-from typing import Dict
-from typing import Optional
-from typing import Sequence
+from typing import TYPE_CHECKING
 import warnings
 
 import numpy as np
 
 from optuna.distributions import BaseDistribution
-from optuna.study import Study
 from optuna.trial import FrozenTrial
 from optuna.trial import TrialState
+
+
+if TYPE_CHECKING:
+    from optuna.study import Study
 
 
 class BaseSampler(abc.ABC):
@@ -31,9 +35,10 @@ class BaseSampler(abc.ABC):
 
     More specifically, parameters are sampled by the following procedure.
     At the beginning of a trial, :meth:`~optuna.samplers.BaseSampler.infer_relative_search_space`
-    is called to determine the relative search space for the trial. Then,
-    :meth:`~optuna.samplers.BaseSampler.sample_relative` is invoked to sample parameters
-    from the relative search space. During the execution of the objective function,
+    is called to determine the relative search space for the trial.
+    During the execution of the objective function,
+    :meth:`~optuna.samplers.BaseSampler.sample_relative` is called only once
+    when sampling the parameters belonging to the relative search space for the first time.
     :meth:`~optuna.samplers.BaseSampler.sample_independent` is used to sample
     parameters that don't belong to the relative search space.
 
@@ -52,7 +57,7 @@ class BaseSampler(abc.ABC):
     @abc.abstractmethod
     def infer_relative_search_space(
         self, study: Study, trial: FrozenTrial
-    ) -> Dict[str, BaseDistribution]:
+    ) -> dict[str, BaseDistribution]:
         """Infer the search space that will be used by relative sampling in the target trial.
 
         This method is called right before :func:`~optuna.samplers.BaseSampler.sample_relative`
@@ -71,7 +76,7 @@ class BaseSampler(abc.ABC):
             A dictionary containing the parameter names and parameter's distributions.
 
         .. seealso::
-            Please refer to :func:`~optuna.samplers.intersection_search_space` as an
+            Please refer to :func:`~optuna.search_space.intersection_search_space` as an
             implementation of :func:`~optuna.samplers.BaseSampler.infer_relative_search_space`.
         """
 
@@ -79,8 +84,8 @@ class BaseSampler(abc.ABC):
 
     @abc.abstractmethod
     def sample_relative(
-        self, study: Study, trial: FrozenTrial, search_space: Dict[str, BaseDistribution]
-    ) -> Dict[str, Any]:
+        self, study: Study, trial: FrozenTrial, search_space: dict[str, BaseDistribution]
+    ) -> dict[str, Any]:
         """Sample parameters in a given search space.
 
         This method is called once at the beginning of each trial, i.e., right before the
@@ -147,12 +152,34 @@ class BaseSampler(abc.ABC):
 
         raise NotImplementedError
 
+    def before_trial(self, study: Study, trial: FrozenTrial) -> None:
+        """Trial pre-processing.
+
+        This method is called before the objective function is called and right after the trial is
+        instantiated. More precisely, this method is called during trial initialization, just
+        before the :func:`~optuna.samplers.BaseSampler.infer_relative_search_space` call. In other
+        words, it is responsible for pre-processing that should be done before inferring the search
+        space.
+
+        .. note::
+            Added in v3.3.0 as an experimental feature. The interface may change in newer versions
+            without prior notice. See https://github.com/optuna/optuna/releases/tag/v3.3.0.
+
+        Args:
+            study:
+                Target study object.
+            trial:
+                Target trial object.
+        """
+
+        pass
+
     def after_trial(
         self,
         study: Study,
         trial: FrozenTrial,
         state: TrialState,
-        values: Optional[Sequence[float]],
+        values: Sequence[float] | None,
     ) -> None:
         """Trial post-processing.
 

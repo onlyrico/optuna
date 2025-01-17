@@ -1,10 +1,15 @@
-from typing import Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from optuna._experimental import experimental_class
 from optuna.samplers.nsgaii._crossovers._base import BaseCrossover
-from optuna.study import Study
+
+
+if TYPE_CHECKING:
+    from optuna.study import Study
 
 
 @experimental_class("3.0.0")
@@ -17,7 +22,7 @@ class SBXCrossover(BaseCrossover):
     - `Deb, K. and R. Agrawal.
       “Simulated Binary Crossover for Continuous Search Space.”
       Complex Syst. 9 (1995): n. pag.
-      <https://www.complex-systems.com/abstracts/v09_i02_a02/>`_
+      <https://www.complex-systems.com/abstracts/v09_i02_a02/>`__
 
     Args:
         eta:
@@ -28,7 +33,7 @@ class SBXCrossover(BaseCrossover):
 
     n_parents = 2
 
-    def __init__(self, eta: Optional[float] = None) -> None:
+    def __init__(self, eta: float | None = None) -> None:
         self._eta = eta
 
     def crossover(

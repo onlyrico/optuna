@@ -1,6 +1,7 @@
 name: Tests (Storage with server)
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - master
@@ -22,11 +23,22 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ['3.7', '3.8', '3.9', '3.10', '3.11']
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
+        test-trigger-type:
+          - ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'Scheduled' || '' }}
+        exclude:
+          - test-trigger-type: ""
+            python-version: "3.9"
+          - test-trigger-type: ""
+            python-version: "3.10"
+          - test-trigger-type: ""
+            python-version: "3.11"
+          - test-trigger-type: ""
+            python-version: "3.12"
 
     services:
       mysql:
-        image: mysql:5.7
+        image: mysql:8
         ports:
           - 3306:3306
         env:
@@ -40,7 +52,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: postgres:10.1-alpine
+        image: postgres:latest
         ports:
           - 5432:5432
         env:
@@ -53,16 +65,16 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:6.2.6
+        image: redis
         ports:
           - 6379:6379
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Setup Python${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
 
@@ -91,12 +103,20 @@ jobs:
         python -c 'import optuna'
         optuna --version
 
-        pip install --progress-bar off .[test]
-        pip install --progress-bar off .[optional]
+        pip install --progress-bar off .[test] --extra-index-url https://download.pytorch.org/whl/cpu
+        pip install --progress-bar off .[optional] --extra-index-url https://download.pytorch.org/whl/cpu
 
     - name: Install DB bindings
       run: |
         pip install --progress-bar off PyMySQL cryptography psycopg2-binary redis
+
+    - name: Output installed packages
+      run: |
+        pip freeze --all
+    - name: Output dependency tree
+      run: |
+        pip install pipdeptree
+        pipdeptree
 
     - name: Tests MySQL
       run: |

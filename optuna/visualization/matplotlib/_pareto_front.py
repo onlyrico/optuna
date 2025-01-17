@@ -1,7 +1,7 @@
-from typing import Callable
-from typing import List
-from typing import Optional
-from typing import Sequence
+from __future__ import annotations
+
+from collections.abc import Callable
+from collections.abc import Sequence
 
 from optuna._experimental import experimental_func
 from optuna.study import Study
@@ -20,39 +20,16 @@ if _imports.is_successful():
 def plot_pareto_front(
     study: Study,
     *,
-    target_names: Optional[List[str]] = None,
+    target_names: list[str] | None = None,
     include_dominated_trials: bool = True,
-    axis_order: Optional[List[int]] = None,
-    constraints_func: Optional[Callable[[FrozenTrial], Sequence[float]]] = None,
-    targets: Optional[Callable[[FrozenTrial], Sequence[float]]] = None,
+    axis_order: list[int] | None = None,
+    constraints_func: Callable[[FrozenTrial], Sequence[float]] | None = None,
+    targets: Callable[[FrozenTrial], Sequence[float]] | None = None,
 ) -> "Axes":
     """Plot the Pareto front of a study.
 
     .. seealso::
         Please refer to :func:`optuna.visualization.plot_pareto_front` for an example.
-
-    Example:
-
-        The following code snippet shows how to plot the Pareto front of a study.
-
-        .. plot::
-
-            import optuna
-
-
-            def objective(trial):
-                x = trial.suggest_float("x", 0, 5)
-                y = trial.suggest_float("y", 0, 3)
-
-                v0 = 4 * x ** 2 + 4 * y ** 2
-                v1 = (x - 5) ** 2 + (y - 5) ** 2
-                return v0, v1
-
-
-            study = optuna.create_study(directions=["minimize", "minimize"])
-            study.optimize(objective, n_trials=50)
-
-            optuna.visualization.matplotlib.plot_pareto_front(study)
 
     Args:
         study:
@@ -84,12 +61,17 @@ def plot_pareto_front(
             If given, trials are classified into three categories: feasible and best, feasible but
             non-best, and infeasible. Categories are shown in different colors. Here, whether a
             trial is best (on Pareto front) or not is determined ignoring all infeasible trials.
+
+            .. warning::
+                Deprecated in v4.0.0. This feature will be removed in the future. The removal of
+                this feature is currently scheduled for v6.0.0, but this schedule is subject to
+                change. See https://github.com/optuna/optuna/releases/tag/v4.0.0.
         targets:
             A function that returns a tuple of target values to display.
             The argument to this function is :class:`~optuna.trial.FrozenTrial`.
             ``targets`` must be :obj:`None` or return 2 or 3 values.
             ``axis_order`` and ``targets`` cannot be used at the same time.
-            If ``study.n_objectives`` is neither 2 nor 3, ``targets`` must be specified.
+            If the number of objectives is neither 2 nor 3, ``targets`` must be specified.
 
             .. note::
                 Added in v3.0.0 as an experimental feature. The interface may change in newer

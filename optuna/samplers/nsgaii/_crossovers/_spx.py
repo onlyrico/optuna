@@ -1,10 +1,15 @@
-from typing import Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from optuna._experimental import experimental_class
 from optuna.samplers.nsgaii._crossovers._base import BaseCrossover
-from optuna.study import Study
+
+
+if TYPE_CHECKING:
+    from optuna.study import Study
 
 
 @experimental_class("3.0.0")
@@ -19,7 +24,7 @@ class SPXCrossover(BaseCrossover):
       David E. Goldberg and Kumara Sastry and Kumara Sastry
       Progress Toward Linkage Learning in Real-Coded GAs with Simplex Crossover.
       IlliGAL Report. 2000.
-      <https://www.researchgate.net/publication/2388486_Progress_Toward_Linkage_Learning_in_Real-Coded_GAs_with_Simplex_Crossover>`_
+      <https://www.researchgate.net/publication/2388486_Progress_Toward_Linkage_Learning_in_Real-Coded_GAs_with_Simplex_Crossover>`__
 
     Args:
         epsilon:
@@ -28,7 +33,7 @@ class SPXCrossover(BaseCrossover):
 
     n_parents = 3
 
-    def __init__(self, epsilon: Optional[float] = None) -> None:
+    def __init__(self, epsilon: float | None = None) -> None:
         self._epsilon = epsilon
 
     def crossover(

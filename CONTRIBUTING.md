@@ -16,6 +16,7 @@ Join Us!
 If you feel like giving a hand, here are some ways:
 - Implement a feature
     - If you have some cool idea, please open an issue first to discuss design to make your idea in a better shape.
+    - We also welcome PRs for [optunahub-registry](https://github.com/optuna/optunahub-registry). [OptunaHub](https://hub.optuna.org/) is a feature-sharing platform for Optuna.
 - Send a patch
     - Dirty your hands by tackling [issues with `contribution-welcome` label](https://github.com/optuna/optuna/issues?q=is%3Aissue+is%3Aopen+label%3Acontribution-welcome)
 - Report a bug
@@ -77,6 +78,17 @@ $ pip install ".[checking]"
 $ ./formats.sh
 ```
 
+You can use `pre-commit` to automatically check the format, coding style, and type hints before committing.
+The following commands automatically fix format errors by auto-formatters.
+
+```bash
+# Install `pre-commit`.
+$ pip install pre-commit
+
+$ pre-commit install
+$ pre-commit run --all-files
+```
+
 ### Documentation
 
 When adding a new feature to the framework, you also need to document it in the reference.
@@ -106,9 +118,8 @@ Whether you edit any tutorial or not doesn't matter.
 
 To avoid having to run the tutorials, you may download executed tutorial artifacts named "tutorial" from our CI (see the capture below) and put them in `docs/build` before
 extracting the files in the zip to `docs/source/tutorial` directory.
-Note that the CI runs with Python 3.8 and the generated artifacts contain pickle files.
-The pickle files are serialized with [the protocol version 5](https://docs.python.org/3/library/pickle.html#data-stream-format) so you will see the error with Python 3.7 or older.
-Please use Python 3.8 or later if you build the documentation with artifacts.
+Note that the CI runs with Python 3.12 and the generated artifacts contain pickle files.
+Please use the same Python version as in the CI if you build the documentation with artifacts to avoid unexpected errors due to the python version difference.
 
 ![image](https://user-images.githubusercontent.com/16191443/107472296-0b211400-6bb2-11eb-9203-e2c42ce499ad.png)
 
@@ -139,11 +150,8 @@ unit tests are stored under the [tests directory](./tests).
 
 Please install some required packages at first.
 ```bash
-# Install required packages to test all modules without visualization and integration modules.
-pip install ".[test]"
-
-# Install required packages to test all modules including visualization and integration modules.
-pip install ".[optional,integration]" -f https://download.pytorch.org/whl/torch_stable.html
+# Install required packages to test all modules.
+pip install ".[test,optional]"
 ```
 
 You can run your tests as follows:
@@ -196,4 +204,3 @@ Once you get a good understanding of how Minituna is designed, it will not be to
 We encourage you to practice reading the Minituna code with the following article.
 
 [An Introduction to the Implementation of Optuna, a Hyperparameter Optimization Framework](https://medium.com/optuna/an-introduction-to-the-implementation-of-optuna-a-hyperparameter-optimization-framework-33995d9ec354)
-

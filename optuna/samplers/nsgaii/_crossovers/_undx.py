@@ -1,10 +1,15 @@
-from typing import Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from optuna._experimental import experimental_class
 from optuna.samplers.nsgaii._crossovers._base import BaseCrossover
-from optuna.study import Study
+
+
+if TYPE_CHECKING:
+    from optuna.study import Study
 
 
 @experimental_class("3.0.0")
@@ -19,7 +24,7 @@ class UNDXCrossover(BaseCrossover):
       for real-coded genetic algorithms,
       Proceedings of the 1999 Congress on Evolutionary Computation-CEC99
       (Cat. No. 99TH8406), 1999, pp. 1581-1588 Vol. 2
-      <https://ieeexplore.ieee.org/document/782672>`_
+      <https://doi.org/10.1109/CEC.1999.782672>`__
 
     Args:
         sigma_xi:
@@ -31,7 +36,7 @@ class UNDXCrossover(BaseCrossover):
 
     n_parents = 3
 
-    def __init__(self, sigma_xi: float = 0.5, sigma_eta: Optional[float] = None) -> None:
+    def __init__(self, sigma_xi: float = 0.5, sigma_eta: float | None = None) -> None:
         self._sigma_xi = sigma_xi
         self._sigma_eta = sigma_eta
 
@@ -69,7 +74,7 @@ class UNDXCrossover(BaseCrossover):
         study: Study,
         search_space_bounds: np.ndarray,
     ) -> np.ndarray:
-        # https://ieeexplore.ieee.org/document/782672
+        # https://doi.org/10.1109/CEC.1999.782672
         # Section 2 Unimodal Normal Distribution Crossover
         n = len(search_space_bounds)
         xp = (parents_params[0] + parents_params[1]) / 2  # Section 2 (2).

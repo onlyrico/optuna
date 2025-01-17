@@ -1,27 +1,33 @@
+from __future__ import annotations
+
+from collections.abc import Mapping
+from collections.abc import Sequence
 import datetime
+import math
 from typing import Any
+from typing import cast
 from typing import Dict
-from typing import List
-from typing import Optional
 from typing import overload
-from typing import Sequence
 import warnings
 
 from optuna import distributions
 from optuna import logging
+from optuna._convert_positional_args import convert_positional_args
 from optuna._deprecated import deprecated_func
+from optuna._typing import JSONSerializable
 from optuna.distributions import _convert_old_distribution_to_new_distribution
 from optuna.distributions import BaseDistribution
 from optuna.distributions import CategoricalChoiceType
 from optuna.distributions import CategoricalDistribution
 from optuna.distributions import FloatDistribution
 from optuna.distributions import IntDistribution
+from optuna.trial._base import _SUGGEST_INT_POSITIONAL_ARGS
 from optuna.trial._base import BaseTrial
 from optuna.trial._state import TrialState
 
 
 _logger = logging.get_logger(__name__)
-_suggest_deprecated_msg = "Use :func:`~optuna.trial.FrozenTrial.suggest_float` instead."
+_suggest_deprecated_msg = "Use suggest_float{args} instead."
 
 
 class FrozenTrial(BaseTrial):
@@ -136,21 +142,21 @@ class FrozenTrial(BaseTrial):
         self,
         number: int,
         state: TrialState,
-        value: Optional[float],
-        datetime_start: Optional[datetime.datetime],
-        datetime_complete: Optional[datetime.datetime],
-        params: Dict[str, Any],
-        distributions: Dict[str, BaseDistribution],
-        user_attrs: Dict[str, Any],
-        system_attrs: Dict[str, Any],
-        intermediate_values: Dict[int, float],
+        value: float | None,
+        datetime_start: datetime.datetime | None,
+        datetime_complete: datetime.datetime | None,
+        params: dict[str, Any],
+        distributions: dict[str, BaseDistribution],
+        user_attrs: dict[str, Any],
+        system_attrs: dict[str, Any],
+        intermediate_values: dict[int, float],
         trial_id: int,
         *,
-        values: Optional[Sequence[float]] = None,
+        values: Sequence[float] | None = None,
     ) -> None:
         self._number = number
         self.state = state
-        self._values: Optional[List[float]] = None
+        self._values: list[float] | None = None
         if value is not None and values is not None:
             raise ValueError("Specify only one of `value` and `values`.")
         elif value is not None:
@@ -205,51 +211,48 @@ class FrozenTrial(BaseTrial):
         low: float,
         high: float,
         *,
-        step: Optional[float] = None,
+        step: float | None = None,
         log: bool = False,
     ) -> float:
         return self._suggest(name, FloatDistribution(low, high, log=log, step=step))
 
-    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg)
+    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg.format(args=""))
     def suggest_uniform(self, name: str, low: float, high: float) -> float:
         return self.suggest_float(name, low, high)
 
-    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg)
+    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg.format(args="(..., log=True)"))
     def suggest_loguniform(self, name: str, low: float, high: float) -> float:
         return self.suggest_float(name, low, high, log=True)
 
-    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg)
+    @deprecated_func("3.0.0", "6.0.0", text=_suggest_deprecated_msg.format(args="(..., step=...)"))
     def suggest_discrete_uniform(self, name: str, low: float, high: float, q: float) -> float:
         return self.suggest_float(name, low, high, step=q)
 
-    def suggest_int(self, name: str, low: int, high: int, step: int = 1, log: bool = False) -> int:
+    @convert_positional_args(previous_positional_arg_names=_SUGGEST_INT_POSITIONAL_ARGS)
+    def suggest_int(
+        self, name: str, low: int, high: int, *, step: int = 1, log: bool = False
+    ) -> int:
         return int(self._suggest(name, IntDistribution(low, high, log=log, step=step)))
 
     @overload
-    def suggest_categorical(self, name: str, choices: Sequence[None]) -> None:
-        ...
+    def suggest_categorical(self, name: str, choices: Sequence[None]) -> None: ...
 
     @overload
-    def suggest_categorical(self, name: str, choices: Sequence[bool]) -> bool:
-        ...
+    def suggest_categorical(self, name: str, choices: Sequence[bool]) -> bool: ...
 
     @overload
-    def suggest_categorical(self, name: str, choices: Sequence[int]) -> int:
-        ...
+    def suggest_categorical(self, name: str, choices: Sequence[int]) -> int: ...
 
     @overload
-    def suggest_categorical(self, name: str, choices: Sequence[float]) -> float:
-        ...
+    def suggest_categorical(self, name: str, choices: Sequence[float]) -> float: ...
 
     @overload
-    def suggest_categorical(self, name: str, choices: Sequence[str]) -> str:
-        ...
+    def suggest_categorical(self, name: str, choices: Sequence[str]) -> str: ...
 
     @overload
     def suggest_categorical(
         self, name: str, choices: Sequence[CategoricalChoiceType]
-    ) -> CategoricalChoiceType:
-        ...
+    ) -> CategoricalChoiceType: ...
 
     def suggest_categorical(
         self, name: str, choices: Sequence[CategoricalChoiceType]
@@ -294,7 +297,7 @@ class FrozenTrial(BaseTrial):
     def set_user_attr(self, key: str, value: Any) -> None:
         self._user_attrs[key] = value
 
-    @deprecated_func("3.1.0", "6.0.0")
+    @deprecated_func("3.1.0", "5.0.0")
     def set_system_attr(self, key: str, value: Any) -> None:
         self._system_attrs[key] = value
 
@@ -313,8 +316,13 @@ class FrozenTrial(BaseTrial):
                     "`datetime_complete` is supposed to be None for an unfinished trial."
                 )
 
-        if self.state == TrialState.COMPLETE and self._values is None:
-            raise ValueError("`value` is supposed to be set for a complete trial.")
+        if self.state == TrialState.FAIL and self._values is not None:
+            raise ValueError(f"values should be None for a failed trial, but got {self._values}.")
+        if self.state == TrialState.COMPLETE:
+            if self._values is None:
+                raise ValueError("values should be set for a complete trial.")
+            elif any(math.isnan(x) for x in self._values):
+                raise ValueError("values should not contain NaN.")
 
         if set(self.params.keys()) != set(self.distributions.keys()):
             raise ValueError(
@@ -364,7 +372,7 @@ class FrozenTrial(BaseTrial):
         self._number = value
 
     @property
-    def value(self) -> Optional[float]:
+    def value(self) -> float | None:
         if self._values is not None:
             if len(self._values) > 1:
                 raise RuntimeError(
@@ -374,7 +382,7 @@ class FrozenTrial(BaseTrial):
         return None
 
     @value.setter
-    def value(self, v: Optional[float]) -> None:
+    def value(self, v: float | None) -> None:
         if self._values is not None:
             if len(self._values) > 1:
                 raise RuntimeError(
@@ -389,10 +397,10 @@ class FrozenTrial(BaseTrial):
     # These `_get_values`, `_set_values`, and `values = property(_get_values, _set_values)` are
     # defined to pass the mypy.
     # See https://github.com/python/mypy/issues/3004#issuecomment-726022329.
-    def _get_values(self) -> Optional[List[float]]:
+    def _get_values(self) -> list[float] | None:
         return self._values
 
-    def _set_values(self, v: Optional[Sequence[float]]) -> None:
+    def _set_values(self, v: Sequence[float] | None) -> None:
         if v is not None:
             self._values = list(v)
         else:
@@ -401,47 +409,47 @@ class FrozenTrial(BaseTrial):
     values = property(_get_values, _set_values)
 
     @property
-    def datetime_start(self) -> Optional[datetime.datetime]:
+    def datetime_start(self) -> datetime.datetime | None:
         return self._datetime_start
 
     @datetime_start.setter
-    def datetime_start(self, value: Optional[datetime.datetime]) -> None:
+    def datetime_start(self, value: datetime.datetime | None) -> None:
         self._datetime_start = value
 
     @property
-    def params(self) -> Dict[str, Any]:
+    def params(self) -> dict[str, Any]:
         return self._params
 
     @params.setter
-    def params(self, params: Dict[str, Any]) -> None:
+    def params(self, params: dict[str, Any]) -> None:
         self._params = params
 
     @property
-    def distributions(self) -> Dict[str, BaseDistribution]:
+    def distributions(self) -> dict[str, BaseDistribution]:
         return self._distributions
 
     @distributions.setter
-    def distributions(self, value: Dict[str, BaseDistribution]) -> None:
+    def distributions(self, value: dict[str, BaseDistribution]) -> None:
         self._distributions = value
 
     @property
-    def user_attrs(self) -> Dict[str, Any]:
+    def user_attrs(self) -> dict[str, Any]:
         return self._user_attrs
 
     @user_attrs.setter
-    def user_attrs(self, value: Dict[str, Any]) -> None:
+    def user_attrs(self, value: dict[str, Any]) -> None:
         self._user_attrs = value
 
     @property
-    def system_attrs(self) -> Dict[str, Any]:
+    def system_attrs(self) -> dict[str, Any]:
         return self._system_attrs
 
     @system_attrs.setter
-    def system_attrs(self, value: Dict[str, Any]) -> None:
-        self._system_attrs = value
+    def system_attrs(self, value: Mapping[str, JSONSerializable]) -> None:
+        self._system_attrs = cast(Dict[str, Any], value)
 
     @property
-    def last_step(self) -> Optional[int]:
+    def last_step(self) -> int | None:
         """Return the maximum step of :attr:`intermediate_values` in the trial.
 
         Returns:
@@ -454,7 +462,7 @@ class FrozenTrial(BaseTrial):
             return max(self.intermediate_values.keys())
 
     @property
-    def duration(self) -> Optional[datetime.timedelta]:
+    def duration(self) -> datetime.timedelta | None:
         """Return the elapsed time taken to complete the trial.
 
         Returns:
@@ -470,13 +478,13 @@ class FrozenTrial(BaseTrial):
 def create_trial(
     *,
     state: TrialState = TrialState.COMPLETE,
-    value: Optional[float] = None,
-    values: Optional[Sequence[float]] = None,
-    params: Optional[Dict[str, Any]] = None,
-    distributions: Optional[Dict[str, BaseDistribution]] = None,
-    user_attrs: Optional[Dict[str, Any]] = None,
-    system_attrs: Optional[Dict[str, Any]] = None,
-    intermediate_values: Optional[Dict[int, float]] = None,
+    value: float | None = None,
+    values: Sequence[float] | None = None,
+    params: dict[str, Any] | None = None,
+    distributions: dict[str, BaseDistribution] | None = None,
+    user_attrs: dict[str, Any] | None = None,
+    system_attrs: dict[str, Any] | None = None,
+    intermediate_values: dict[int, float] | None = None,
 ) -> FrozenTrial:
     """Create a new :class:`~optuna.trial.FrozenTrial`.
 
@@ -561,7 +569,7 @@ def create_trial(
         datetime_start = datetime.datetime.now()
 
     if state.is_finished():
-        datetime_complete: Optional[datetime.datetime] = datetime_start
+        datetime_complete: datetime.datetime | None = datetime_start
     else:
         datetime_complete = None
 

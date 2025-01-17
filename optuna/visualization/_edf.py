@@ -1,10 +1,9 @@
-from typing import Callable
+from __future__ import annotations
+
+from collections.abc import Callable
+from collections.abc import Sequence
 from typing import cast
-from typing import List
 from typing import NamedTuple
-from typing import Optional
-from typing import Sequence
-from typing import Union
 
 import numpy as np
 
@@ -32,14 +31,14 @@ class _EDFLineInfo(NamedTuple):
 
 
 class _EDFInfo(NamedTuple):
-    lines: List[_EDFLineInfo]
+    lines: list[_EDFLineInfo]
     x_values: np.ndarray
 
 
 def plot_edf(
-    study: Union[Study, Sequence[Study]],
+    study: Study | Sequence[Study],
     *,
-    target: Optional[Callable[[FrozenTrial], float]] = None,
+    target: Callable[[FrozenTrial], float] | None = None,
     target_name: str = "Objective Value",
 ) -> "go.Figure":
     """Plot the objective value EDF (empirical distribution function) of a study.
@@ -50,52 +49,13 @@ def plot_edf(
 
         EDF is useful to analyze and improve search spaces.
         For instance, you can see a practical use case of EDF in the paper
-        `Designing Network Design Spaces <https://arxiv.org/abs/2003.13678>`_.
+        `Designing Network Design Spaces
+        <https://doi.ieeecomputersociety.org/10.1109/CVPR42600.2020.01044>`__.
 
     .. note::
 
         The plotted EDF assumes that the value of the objective function is in
         accordance with the uniform distribution over the objective space.
-
-    Example:
-
-        The following code snippet shows how to plot EDF.
-
-        .. plotly::
-
-            import math
-
-            import optuna
-
-
-            def ackley(x, y):
-                a = 20 * math.exp(-0.2 * math.sqrt(0.5 * (x ** 2 + y ** 2)))
-                b = math.exp(0.5 * (math.cos(2 * math.pi * x) + math.cos(2 * math.pi * y)))
-                return -a - b + math.e + 20
-
-
-            def objective(trial, low, high):
-                x = trial.suggest_float("x", low, high)
-                y = trial.suggest_float("y", low, high)
-                return ackley(x, y)
-
-
-            sampler = optuna.samplers.RandomSampler(seed=10)
-
-            # Widest search space.
-            study0 = optuna.create_study(study_name="x=[0,5), y=[0,5)", sampler=sampler)
-            study0.optimize(lambda t: objective(t, 0, 5), n_trials=500)
-
-            # Narrower search space.
-            study1 = optuna.create_study(study_name="x=[0,4), y=[0,4)", sampler=sampler)
-            study1.optimize(lambda t: objective(t, 0, 4), n_trials=500)
-
-            # Narrowest search space but it doesn't include the global optimum point.
-            study2 = optuna.create_study(study_name="x=[1,3), y=[1,3)", sampler=sampler)
-            study2.optimize(lambda t: objective(t, 1, 3), n_trials=500)
-
-            fig = optuna.visualization.plot_edf([study0, study1, study2])
-            fig.show()
 
     Args:
         study:
@@ -111,7 +71,7 @@ def plot_edf(
             Target's name to display on the axis label.
 
     Returns:
-        A :class:`plotly.graph_objs.Figure` object.
+        A :class:`plotly.graph_objects.Figure` object.
     """
 
     _imports.check()
@@ -139,8 +99,8 @@ def plot_edf(
 
 
 def _get_edf_info(
-    study: Union[Study, Sequence[Study]],
-    target: Optional[Callable[[FrozenTrial], float]] = None,
+    study: Study | Sequence[Study],
+    target: Callable[[FrozenTrial], float] | None = None,
     target_name: str = "Objective Value",
 ) -> _EDFInfo:
     if isinstance(study, Study):
@@ -162,7 +122,7 @@ def _get_edf_info(
         target = _target
 
     study_names = []
-    all_values: List[np.ndarray] = []
+    all_values: list[np.ndarray] = []
     for study in studies:
         trials = _filter_nonfinite(
             study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,)), target=target

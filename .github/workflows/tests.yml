@@ -20,7 +20,16 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ['3.7', '3.8', '3.9', '3.10', '3.11']
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
+        test-trigger-type:
+          - ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'Scheduled' || '' }}
+        exclude:
+          - test-trigger-type: ""
+            python-version: "3.9"
+          - test-trigger-type: ""
+            python-version: "3.10"
+          - test-trigger-type: ""
+            python-version: "3.11"
 
     services:
       redis:
@@ -33,10 +42,10 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Setup Python${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
 
@@ -63,23 +72,31 @@ jobs:
         python -c 'import optuna'
         optuna --version
 
-        pip install --progress-bar off .[test]
-        pip install --progress-bar off .[optional]
+        pip install --progress-bar off .[test] --extra-index-url https://download.pytorch.org/whl/cpu
+        pip install --progress-bar off .[optional] --extra-index-url https://download.pytorch.org/whl/cpu
+
+        # TODO(gen740): Remove this after pytorch supports Python 3.13
+        if [ "${{ matrix.python-version }}" = "3.13" ] ; then
+          pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cpu
+        fi
 
     - name: Output installed packages
       run: |
         pip freeze --all
-
-    - name: Scheduled tests
-      if:  ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    - name: Output dependency tree
       run: |
-        pytest tests -m "not integration"
-      env:
-        SQLALCHEMY_WARN_20: 1
+        pip install pipdeptree
+        pipdeptree
 
     - name: Tests
-      if:  ${{ github.event_name != 'schedule' }}
       run: |
-        pytest tests -m "not integration and not slow"
+        if [ "${{ github.event_name }}" = "schedule" ] || \
+           [ "${{ github.event_name }}" = "workflow_dispatch" ] ; then
+          target=""
+        else
+          target="not slow"
+        fi
+
+        pytest tests -m "$target"
       env:
         SQLALCHEMY_WARN_20: 1
